@@ -3,10 +3,12 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <libconfig.h++>
 #include <list>
 #include "mqtt.h"
 
 using namespace std;
+using namespace libconfig;
 
 struct _device_
 {
@@ -18,8 +20,10 @@ struct _device_
 
 class hikmqtt
 {
+  Config cfg;
   std::list <_device_> devices;
   string mqtt_server, mqtt_user, mqtt_pass;
+  const char *mqtt_pub;
   int mqtt_port;
   const char *cfgFile;
 

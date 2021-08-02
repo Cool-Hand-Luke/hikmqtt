@@ -4,7 +4,6 @@
 #include <iostream>
 #include <string.h>
 #include <unistd.h>
-#include <libconfig.h++>
 #include <csignal>
 #include <thread>
 #include <queue>
@@ -16,7 +15,6 @@
 #include "hik.h"
 
 using namespace std;
-using namespace libconfig;
 
 #define CONFIG_FILE "/home/matt/.hikmqtt.cfg"
 
@@ -26,7 +24,9 @@ class hik_client *hikc;
 
 // TODO: Thread safe queue
 std::queue <char *> msgQueue;
-Config cfg;
+
+// Needs to be outside of our class
+const char *mqtt_sub;
 
 void signalHandler( int signum )
 {
@@ -45,7 +45,7 @@ void hikmqtt::on_message(const struct mosquitto_message *message)
   std::cout << "Got message->topic: " <<  message->topic << endl;
 
   // We are only interested in 'hikctrl' messages
-  if(!strcmp(message->topic, "BTRGB/hikctrl"))
+  if(!strcmp(message->topic, mqtt_sub))
   {
     memset(buf, 0, payload_size * sizeof(char));
 
@@ -74,7 +74,6 @@ int hikmqtt::read_config()
     return(EXIT_FAILURE);
   }
 
-
   return 0;
 }
 
@@ -96,6 +95,9 @@ int hikmqtt::read_config(const char *configFile)
       mqtt_settings.lookupValue("username", mqtt_user);
       mqtt_settings.lookupValue("password", mqtt_pass);
       mqtt_settings.lookupValue("port", mqtt_port);
+
+      mqtt_settings.lookupValue("subscribe", mqtt_sub);
+      mqtt_settings.lookupValue("publish", mqtt_pub);
 
       const Setting &device_settings = root["devices"];
       for ( int i = 0; i < device_settings.getLength(); i++ )
@@ -130,6 +132,7 @@ int hikmqtt::run(void)
   // Connect to our MQTT server
   mqtt = new mqtt_client("hikmqtt", mqtt_user, mqtt_pass, mqtt_server, mqtt_port);
   mqtt->on_message(on_message);
+  mqtt->sub(mqtt_sub);
 
   // Initialise our Hikvision class
   hikc = new hik_client(&msgQueue);
@@ -169,9 +172,9 @@ int hikmqtt::run(void)
 
     while ( !msgQueue.empty() )
     {
-      char *alert = msgQueue.front();
+      const char *alert = msgQueue.front();
       std::cout << "alert: " << alert << endl;
-      mqtt->publish(NULL, "BTRGB/hikAlarm", strlen(alert), alert, /*qos*/0, /*retain*/false);
+      mqtt->pub(mqtt_pub, alert);
       msgQueue.pop();
     }
 
@@ -192,4 +195,6 @@ int main(void)
   {
     hm->run();
   }
+
+  return rc;
 }

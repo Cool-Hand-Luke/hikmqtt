@@ -39,7 +39,6 @@ void mqtt_client::on_connect(int rc)
   if( rc == MOSQ_ERR_SUCCESS )
   {
     m_isConnected = true;
-    subscribe(NULL, "BTRGB/#", 0);
   }
   else
   {
@@ -65,9 +64,14 @@ void mqtt_client::on_message(const struct mosquitto_message *message)
   }
 }
 
-bool mqtt_client::send_message(const char* _message) 
+void mqtt_client::sub(const char *topic)
 {
-  int ret = publish(NULL, "BTRGB/hikAlarm", strlen(_message), _message, 1, false);
+  subscribe(NULL, topic, 0);
+}
+
+bool mqtt_client::pub(const char *topic, const char *_message)
+{
+  int ret = publish(NULL, topic, strlen(_message), _message,/*qos*/0,/*retain*/false);
 
   return (ret == MOSQ_ERR_SUCCESS);
 }

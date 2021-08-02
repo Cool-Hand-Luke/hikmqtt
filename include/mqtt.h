@@ -23,8 +23,9 @@ class mqtt_client : public mosqpp::mosquittopp
 public:
   mqtt_client(const char *id, string username, string password, string host, int _port);
   ~mqtt_client();
-  virtual bool send_message(const char *message);
 
+  void sub(const char *topic);
+  bool pub(const char *topic, const char *_message);
   void on_message(OnMessage Callback);
 
 private:
