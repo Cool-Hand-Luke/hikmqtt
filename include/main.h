@@ -27,13 +27,14 @@ class hikmqtt
   int mqtt_port;
   const char *cfgFile;
 
-public:
   struct command
   {
     char          name[24];
     void          (hikmqtt::*command)(const char *devId, const char *data);
   };
+  // We only want one of these
   static command command_list[];
+public:
 
   hikmqtt() {};
   ~hikmqtt() {};
@@ -41,9 +42,9 @@ public:
   int  read_config(const char *configFile);
   int  run(void);
 
+private:
   void call_ptz_preset(const char *devId, const char *data);
   void get_dev_info(const char *devId, const char *data);
-private:
 
   int  read_config();
   void hikdaemon(void);
