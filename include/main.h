@@ -23,23 +23,36 @@ class hikmqtt
   Config cfg;
   std::list <_device_> devices;
   string mqtt_server, mqtt_user, mqtt_pass;
-  const char *mqtt_pub;
+  const char *mqtt_sub, *mqtt_pub;
   int mqtt_port;
   const char *cfgFile;
 
 public:
-  hikmqtt() {};
-   ~hikmqtt();
+  struct command
+  {
+    char          name[24];
+    void          (hikmqtt::*command)(const char *devId, const char *data);
+  };
+  static command command_list[];
 
-  int read_config(const char *configFile);
-  int run(void);
+  hikmqtt() {};
+  ~hikmqtt() {};
+
+  int  read_config(const char *configFile);
+  int  run(void);
+
+  void call_ptz_preset(const char *devId, const char *data);
+  void get_dev_info(const char *devId, const char *data);
 private:
+
   int  read_config();
   void hikdaemon(void);
-  static void on_message(const struct mosquitto_message *message);
+  int  str_cmp(const char *arg1, const char *arg2);
+  int  lookup_command(const char *arg);
+  void process_mqtt_cmd(const struct mosquitto_message *message);
+
+  static void on_message(const struct mosquitto_message *message, void *ptr);
 };
 
 #endif //HIKMQTT_H
-
-
 

@@ -7,6 +7,8 @@
 #include <csignal>
 #include <thread>
 #include <queue>
+#include <functional>
+#include <type_traits>
 #include <cjson/cJSON.h>
 
 #include "HCNetSDK.h"
@@ -25,24 +27,80 @@ class hik_client *hikc;
 // TODO: Thread safe queue
 std::queue <char *> msgQueue;
 
-// Needs to be outside of our class
-const char *mqtt_sub;
+// Easy to use list of commands we respond and the associated function
+// Caveat: Needs to be in alphabetical order!
+hikmqtt::command hikmqtt::command_list[] = {
+  { "call_preset",      &hikmqtt::get_dev_info },
+  { "get_dev_info",     &hikmqtt::call_ptz_preset }
+};
+#define LCTOP ((sizeof(hikmqtt::command_list) / sizeof(struct hikmqtt::command)) -1)
 
+/*********************************************************************************/
+// * Program Proper
+/*********************************************************************************/
 void signalHandler( int signum )
 {
-   // Cleanup
-   delete(hikc);
+  // Cleanup
+  delete(hikc);
 
-   // Exit
-   exit(signum);
+  // Exit
+  exit(signum);
 }
 
-void hikmqtt::on_message(const struct mosquitto_message *message)
+void hikmqtt::get_dev_info(const char *devId, const char *data)
+{
+}
+
+void hikmqtt::call_ptz_preset(const char *devId, const char *data)
+{
+  //NET_DVR_PTZPreset(devId, GOTO_PRESET, preset);
+}
+
+/*********************************************************************************/
+/*  These following string comparers are CASE INSENSITIVE and will only compare  */
+/*  Alphabetic characters reliably.                                              */
+/*********************************************************************************/
+/*   Scan until different or until the end of both  */
+int hikmqtt::str_cmp(const char *arg1, const char *arg2)
+{
+  int  chk;
+
+  while(*arg1 || *arg2)
+  {
+    if((chk = (*arg1++ | 32) - (*arg2++ | 32)))
+    {
+      return (chk);
+    }
+  }
+
+  return(0);
+}
+
+int hikmqtt::lookup_command(const char *arg)
+{
+  int top=LCTOP;
+  int mid,found,low=0;
+
+  while ( low <= top )
+  {
+    mid = (low+top) / 2;
+
+    if ( (found = str_cmp(arg,command_list[mid].name)) > 0 )
+      low = mid +1 ;
+    else if(found < 0)
+      top = mid -1;
+    else
+      return(mid);
+  }
+
+  return(-1);
+}
+
+void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
 {
   int payload_size = MAX_PAYLOAD + 1;
+  int rc;
   char buf[payload_size];
-
-  std::cout << "Got message->topic: " <<  message->topic << endl;
 
   // We are only interested in 'hikctrl' messages
   if(!strcmp(message->topic, mqtt_sub))
@@ -52,10 +110,49 @@ void hikmqtt::on_message(const struct mosquitto_message *message)
     /* Copy N-1 bytes to ensure always 0 terminated. */
     memcpy(buf, message->payload, MAX_PAYLOAD * sizeof(char));
 
-    std::cout << "Command: " <<  message->topic << " -> " <<  buf << endl;
+    cJSON *command = cJSON_Parse((const char *)message->payload);
+    if ( command != NULL )
+    {
+      cJSON *cmdName = cJSON_GetObjectItem(command, "command");
+      cJSON *devId   = cJSON_GetObjectItem(command, "devId");
+      cJSON *cmdArg  = cJSON_GetObjectItem(command, "arg");
+
+      // Ensure we have a command and a numeric device ID
+      if ( (cJSON_IsString(cmdName) && (cmdName->valuestring != NULL)) && cJSON_IsNumber(devId) )
+      {
+        // See if we have a command that matches the request
+        rc = lookup_command((const char *)cmdName->valuestring);
+        if ( rc >= 0 )
+        {
+          const char *tmpStr = NULL;
+          // Do we need to convert a number?
+          if ( cJSON_IsNumber(cmdArg) )
+          {
+            tmpStr = to_string(cmdArg->valueint).c_str();
+          }
+          else
+          {
+            tmpStr = cmdArg->valuestring;
+          }
+
+          // Damn, this made my life easy. If only I had known of it sooner! :)
+          std::invoke(command_list[1].command, this, to_string(devId->valueint).c_str(), tmpStr);
+        }
+      }
+
+      cJSON_Delete(command);
+    }
   }
 }
 
+/*********************************************************************************/
+void hikmqtt::on_message(const struct mosquitto_message *message, void *userData)
+{
+  hikmqtt *ptr = (hikmqtt *)userData;
+  ptr->process_mqtt_cmd(message);
+}
+
+/*********************************************************************************/
 int hikmqtt::read_config()
 {
   try
@@ -77,6 +174,7 @@ int hikmqtt::read_config()
   return 0;
 }
 
+/*********************************************************************************/
 int hikmqtt::read_config(const char *configFile)
 {
   int rc;
@@ -125,13 +223,14 @@ int hikmqtt::read_config(const char *configFile)
   return rc;
 }
 
+/*********************************************************************************/
 int hikmqtt::run(void)
 {
   int rc = 0;
 
   // Connect to our MQTT server
   mqtt = new mqtt_client("hikmqtt", mqtt_user, mqtt_pass, mqtt_server, mqtt_port);
-  mqtt->on_message(on_message);
+  mqtt->on_message(on_message, this);
   mqtt->sub(mqtt_sub);
 
   // Initialise our Hikvision class

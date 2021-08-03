@@ -29,9 +29,10 @@ mqtt_client::~mqtt_client()
   mosqpp::lib_cleanup();
 }
 
-void mqtt_client::on_message(OnMessage Callback)
+void mqtt_client::on_message(OnMessage Callback, void *_userData)
 {
   msgCallback = Callback;
+  userData = _userData;
 }
 
 void mqtt_client::on_connect(int rc)
@@ -60,7 +61,7 @@ void mqtt_client::on_message(const struct mosquitto_message *message)
 {
   if ( msgCallback )
   {
-    msgCallback(message);
+    msgCallback(message, userData);
   }
 }
 
