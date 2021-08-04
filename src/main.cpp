@@ -30,8 +30,11 @@ std::queue <char *> msgQueue;
 // Easy to use list of commands we respond and the associated function
 // Caveat: Needs to be in alphabetical order!
 hikmqtt::command hikmqtt::command_list[] = {
-  { "call_preset",      &hikmqtt::get_dev_info },
-  { "get_dev_info",     &hikmqtt::call_ptz_preset }
+  { "call_preset",        &hikmqtt::call_ptz_preset },
+  { "delete_preset",      &hikmqtt::delete_ptz_preset },
+  { "get_dev_info",       &hikmqtt::get_dev_info },
+  { "get_ptz_pos",        &hikmqtt::get_ptz_pos },
+  { "set_preset",         &hikmqtt::set_ptz_preset },
 };
 #define LCTOP ((sizeof(hikmqtt::command_list) / sizeof(struct hikmqtt::command)) -1)
 
@@ -47,13 +50,40 @@ void signalHandler( int signum )
   exit(signum);
 }
 
-void hikmqtt::get_dev_info(const char *devId, const char *data)
+void hikmqtt::set_ptz_preset(int devId, cJSON *cmdArgs)
 {
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  {
+    hikc->ptz_preset(devId, channel->valueint, SET_PRESET, preset->valueint);
+  }
 }
-
-void hikmqtt::call_ptz_preset(const char *devId, const char *data)
+void hikmqtt::call_ptz_preset(int devId, cJSON *cmdArgs)
 {
-  //NET_DVR_PTZPreset(devId, GOTO_PRESET, preset);
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  {
+    hikc->ptz_preset(devId, channel->valueint, GOTO_PRESET, preset->valueint);
+  }
+}
+void hikmqtt::delete_ptz_preset(int devId, cJSON *cmdArgs)
+{
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  {
+    hikc->ptz_preset(devId, channel->valueint, CLE_PRESET, preset->valueint);
+  }
+}
+void hikmqtt::get_dev_info(int devId, cJSON *cmdArgs)
+{
+  //std::cout << devId << data << std::endl;
+}
+void hikmqtt::get_ptz_pos(int devId, cJSON *cmdArgs)
+{
+  //std::cout << devId << data << std::endl;
 }
 
 /*********************************************************************************/
@@ -110,12 +140,12 @@ void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
     /* Copy N-1 bytes to ensure always 0 terminated. */
     memcpy(buf, message->payload, MAX_PAYLOAD * sizeof(char));
 
-    cJSON *command = cJSON_Parse((const char *)message->payload);
-    if ( command != NULL )
+    cJSON *root = cJSON_Parse((const char *)message->payload);
+    if ( root != NULL )
     {
-      cJSON *cmdName = cJSON_GetObjectItem(command, "command");
-      cJSON *devId   = cJSON_GetObjectItem(command, "devId");
-      cJSON *cmdArg  = cJSON_GetObjectItem(command, "arg");
+      cJSON *cmdName = cJSON_GetObjectItem(root, "command");
+      cJSON *devId   = cJSON_GetObjectItem(root, "devId");
+      cJSON *cmdArgs = cJSON_GetObjectItem(root, "args");
 
       // Ensure we have a command and a numeric device ID
       if ( (cJSON_IsString(cmdName) && (cmdName->valuestring != NULL)) && cJSON_IsNumber(devId) )
@@ -124,23 +154,12 @@ void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
         rc = lookup_command((const char *)cmdName->valuestring);
         if ( rc >= 0 )
         {
-          const char *tmpStr = NULL;
-          // Do we need to convert a number?
-          if ( cJSON_IsNumber(cmdArg) )
-          {
-            tmpStr = to_string(cmdArg->valueint).c_str();
-          }
-          else
-          {
-            tmpStr = cmdArg->valuestring;
-          }
-
           // Damn, this made my life easy. If only I had known of it sooner! :)
-          std::invoke(command_list[1].command, this, to_string(devId->valueint).c_str(), tmpStr);
+          std::invoke(command_list[rc].command, this, devId->valueint, cmdArgs);
         }
       }
 
-      cJSON_Delete(command);
+      cJSON_Delete(root);
     }
   }
 }
@@ -243,7 +262,7 @@ int hikmqtt::run(void)
   std::list <_device_>::iterator it;
   for (it = devices.begin(); it != devices.end(); it++)
   {
-    hikc->add_source(it->devId, it->ipAddr, it->username, it->password);
+    rc = hikc->add_source(it->devId, it->ipAddr, it->username, it->password);
   }
 
   while(1)
@@ -254,14 +273,14 @@ int hikmqtt::run(void)
       switch (rc)
       {
       case 4:
-        std::cout << "Authentication Error: " << rc << endl;
+        std::cout << "Authentication Error: " << rc << std::endl;
         break;
       case 5:
-        std::cout << "Connection Refused: " << rc << endl;
+        std::cout << "Connection Refused: " << rc << std::endl;
         mqtt->reconnect();
         break;
       default:
-        std::cout << "Reconnecting on Code: " << rc << endl;
+        std::cout << "Reconnecting on Code: " << rc << std::endl;
         break;
       }
 
@@ -272,7 +291,7 @@ int hikmqtt::run(void)
     while ( !msgQueue.empty() )
     {
       const char *alert = msgQueue.front();
-      std::cout << "alert: " << alert << endl;
+      std::cout << "alert: " << alert << std::endl;
       mqtt->pub(mqtt_pub, alert);
       msgQueue.pop();
     }

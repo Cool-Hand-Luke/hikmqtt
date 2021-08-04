@@ -13,9 +13,10 @@
 using namespace std;
 
 struct _dev_info_ {
-  char  *devId;
-  int   userID;
-}; 
+  int   devId;
+  int   id;
+  long  handle;
+};
 
 class hik_client
 {
@@ -34,13 +35,24 @@ public:
   // Destruct
   ~hik_client();
 
-  int add_source(string devId, string ipAddr, string username, string password);
+  int add_source(int devId, string ipAddr, string username, string password);
   int listen_server(string ipAddr, const unsigned int port);
+  void proc_callback_message(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);
+  void ptz_preset(int devId, long channel, int ptzCmd, int presetIndx);
 
 private:
   //void CALLBACK MessageCallback(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser);
   void init_hik();
   void SDK_Version();
+  void ProcDevStatusChanged(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);
+  void procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);
+
+  int  get_devId(int);
+  long get_handle(int);
+
+  void call_ptz_preset(int devId, const char *data);
+  void get_ptz_pos(int devId, const char *data);
+
   void ProcAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);
   void ProcAlarmV30(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);
   void ProcAlarmV40(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);

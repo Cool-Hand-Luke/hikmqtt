@@ -14,13 +14,13 @@ mqtt_client::mqtt_client(const char *id, string username, string password, strin
   int rc = username_pw_set(username.c_str(), password.c_str());
   if( MOSQ_ERR_SUCCESS != rc )
   {
-    printf("[Subscriber::Subscriber] username_pw_set failed\n");
+    std::cout << "[Subscriber::Subscriber] username_pw_set failed" << std::endl;
   }
   connect_async(host.c_str(), port, 0);
 
   this->loop_start();
 
-  printf("MQTT CLIENT STARTED\n");
+  std::cout << "MQTT CLIENT STARTED" << std::endl;
 }
 
 mqtt_client::~mqtt_client()
@@ -43,18 +43,18 @@ void mqtt_client::on_connect(int rc)
   }
   else
   {
-    printf("[mqtt::on_connect] code: %d\n", rc);
+    std::cout << "[mqtt::on_connect] code: " << rc << std::endl;
   }
 }
 void mqtt_client::on_disconnect(int rc)
 {
   m_isConnected = false;
-  printf("[mqtt::on_disconnect] code: %d\n", rc);
+  std::cout << "[mqtt::on_disconnect] code: " << rc << std::endl;
 }
 
 void mqtt_client::on_subscribe(int mid, int qos_count, const int *granted_qos)
 {
-  printf("Subscription succeeded: %d, %d\n", mid, qos_count);
+  std::cout << "Subscription succeeded: " << mid << ", " << qos_count << std::endl;
 }
 
 void mqtt_client::on_message(const struct mosquitto_message *message)
@@ -79,5 +79,5 @@ bool mqtt_client::pub(const char *topic, const char *_message)
 
 void mqtt_client::on_publish(int rc)
 {
-  //printf("[mqtt::on_publish] code: %d\n", rc);
+  //std::cout << ("[mqtt::on_publish] code: %d\n", rc);
 };

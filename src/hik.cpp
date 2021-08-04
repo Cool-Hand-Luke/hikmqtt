@@ -1,11 +1,12 @@
 
 
 #include <stdio.h>
-#include <iostream>
 #include <string.h>
 #include <unistd.h>
-#include <queue>
 #include <math.h>
+#include <iostream>
+#include <queue>
+#include <algorithm>
 #include <cjson/cJSON.h>
 
 #include "HCNetSDK.h"
@@ -24,6 +25,42 @@ hik_client::hik_client(std::queue <char *> *msgQ)
   init_hik();
 }
 
+long hik_client::get_handle(int devId)
+{
+  long handle = -1;
+
+  // Iterate through our cameras to start receiving notifications
+  std::list <_dev_info_>::iterator it;
+  for (it = lDevices.begin(); it != lDevices.end(); it++)
+  {
+    if ( it->devId == devId )
+    {
+      handle = it->handle;
+      break;
+    }
+  }
+
+  return handle;
+}
+
+int hik_client::get_devId(int id)
+{
+  int devId = -1;
+
+  // Iterate through our cameras to start receiving notifications
+  std::list <_dev_info_>::iterator it;
+  for (it = lDevices.begin(); it != lDevices.end(); it++)
+  {
+    if ( it->id == id )
+    {
+      devId = it->devId;
+      break;
+    }
+  }
+
+  return devId;
+}
+
 hik_client::~hik_client()
 {
   // Stop listen server
@@ -39,7 +76,7 @@ hik_client::~hik_client()
   // Log out all devices
   for (auto const& i : lDevices)
   {
-    NET_DVR_Logout(i.userID);
+    NET_DVR_Logout(i.id);
   }
 
   // Release SDK resource
@@ -62,7 +99,7 @@ void hik_client::init_hik()
   // ----
   // We only need one of these as the last one overwrites
   // any previous. So, move it here and save some CPU.
-  NET_DVR_SetDVRMessageCallBack_V51(0, MessageCallback, NULL);
+  NET_DVR_SetDVRMessageCallBack_V51(0, MessageCallback, this);
 
   //---------------------------------------
   // Compiled SDK Version
@@ -85,8 +122,32 @@ void hik_client::SDK_Version()
       (0x000000ff & uiVersion));
   printf(strTemp);
 }
+/*
 
-void ProcAlarmV30(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
+  DWORD dwReturn = 0;
+  UINT  m_iFollowChan;
+  UINT  m_iMainChan;
+  if (NET_DVR_GetDVRConfig(handle, NET_DVR_GET_PTZPOS, m_iFollowChan, &m_struCurCBPPoint.struPtzPos, sizeof(NET_DVR_PTZPOS), &dwReturn))
+  {
+    printf("NET_DVR_GET_PTZPOS %d t%d z%d\n", m_struCurCBPPoint.struPtzPos.wPanPos, m_struCurCBPPoint.struPtzPos.wTiltPos, m_struCurCBPPoint.struPtzPos.wZoomPos);
+    m_struCurCBPPoint.struPtzPos.wPanPos += 100;
+    NET_DVR_SetDVRConfig(handle, NET_DVR_SET_PTZPOS, m_iFollowChan, &m_struCurCBPPoint.struPtzPos, sizeof(NET_DVR_PTZPOS));
+    NET_DVR_PTZPreset_Other(handle, 1, GOTO_PRESET, 4);
+  }
+*/
+
+void hik_client::ptz_preset(int devId, long channel, int ptzCmd, int presetIndx)
+{
+  long handle = get_handle(devId);
+
+  // NET_DVR_PTZPreset_Other: The device returns success after receiving the control command.
+  NET_DVR_PTZPreset_Other(handle, channel, ptzCmd, presetIndx);
+}
+void hik_client::get_ptz_pos(int devId, const char *data)
+{
+}
+
+void hik_client::ProcAlarmV30(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
   NET_DVR_ALARMINFO_V30 struAlarmInfoV30;
   memcpy(&struAlarmInfoV30, pAlarmInfo, sizeof(NET_DVR_ALARMINFO_V30));
@@ -144,7 +205,7 @@ void ProcAlarmV30(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
   }
 }
 
-void ProcAlarmV40(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
+void hik_client::ProcAlarmV40(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
   NET_DVR_ALARMINFO_V40 struAlarmInfoV40;
   memcpy(&struAlarmInfoV40, pAlarmInfo, sizeof(NET_DVR_ALARMINFO_V40));
@@ -193,11 +254,11 @@ void ProcAlarmV40(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
   }
 }
 
-void ProcDevStatusChanged(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
+void hik_client::ProcDevStatusChanged(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
 }
 
-void procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
+void hik_client::procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
   NET_DVR_GIS_UPLOADINFO  struGISInfo = { 0 };
   memcpy(&struGISInfo, pAlarmInfo, sizeof(struGISInfo));
@@ -222,9 +283,9 @@ void procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLe
 #define GET_MINUTE(_time_)    (((_time_)>>6)  & 63)
 #define GET_SECOND(_time_)    (((_time_)>>0)  & 63)
 
-void ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
+void hik_client::ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
-  int devId = pAlarmer->lUserID;
+  int devId = get_devId(pAlarmer->lUserID);
 
   // New JSON object
   cJSON *hikEvent = cJSON_CreateObject();
@@ -234,6 +295,7 @@ void ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 
   //cJSON_AddStringToObject(hikEvent, "Type", "Alarm");
   cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
+  //cJSON_AddNumberToObject(hikEvent, "uid", (int) pAlarmer->lUserID);
   cJSON_AddNumberToObject(hikEvent, "ts", (long) struVcaRuleAlarm.dwAbsTime);
   //cJSON_AddStringToObject(hikEvent, "IP", (char *) struVcaRuleAlarm.struDevInfo.struDevIP.sIpV4);
   cJSON_AddNumberToObject(hikEvent, "EventType", (int) struVcaRuleAlarm.struRuleInfo.wEventTypeEx);
@@ -276,10 +338,14 @@ void ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
   */
 }
 
-void CALLBACK MessageCallback(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser)
+void CALLBACK MessageCallback(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void *pUser)
 {
-  //printf("MessageCallback: 0x%0X\n", lCommand);
+  hik_client *ptr = (hik_client *)pUser;
+  ptr->proc_callback_message(lCommand, pAlarmer, pAlarmInfo, dwBufLen);
+}
 
+void hik_client::proc_callback_message(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
+{
   switch (lCommand)
   {
     case COMM_IPC_AUXALARM_RESULT:
@@ -337,7 +403,7 @@ int hik_client::listen_server(string ipAddr, const unsigned int port)
   return iHandle;
 }
 
-int hik_client::add_source(string devId, string ipAddr, string username, string password)
+int hik_client::add_source(int devId, string ipAddr, string username, string password)
 {
   //---------------------------------------
   // Prepare to login to device
@@ -356,55 +422,44 @@ int hik_client::add_source(string devId, string ipAddr, string username, string 
   if (id < 0)
   {
      printf("Login error, %d\n", NET_DVR_GetLastError());
-     return false;
   }
-
-  //---------------------------------------
-  // Enable Arming Mode V5.1
-  NET_DVR_SETUPALARM_PARAM_V50 struSetupAlarmParam = { 0 };
-  struSetupAlarmParam.dwSize = sizeof(struSetupAlarmParam);
-  struSetupAlarmParam.byLevel = 1;                  // Arming priority: 0-high, 1-medium, 2-low
-  struSetupAlarmParam.byAlarmInfoType = 1;          // Intel. traffic alarm type: 0-old (NET_DVR_PLATE_RESULT),1-new (NET_ITS_PLATE_RESULT).
-  struSetupAlarmParam.byRetAlarmTypeV40 = 1;        // Motion detection, video loss, video tampering, and alarm input alarm information is sent NET_DVR_ALARMINFO_V40
-  struSetupAlarmParam.byRetDevInfoVersion = 1;      // Alarm types of CVR: 0 = NET_DVR_ALARMINFO_DEV, 1 = NET_DVR_ALARMINFO_DEV_V40
-  struSetupAlarmParam.byRetVQDAlarmType = 1;        // VQD alarm types: 0 = COMM_ALARM_VQD, 1 = COMM_ALARM_VQD_EX
-  struSetupAlarmParam.byFaceAlarmDetection = 1;     // 0 = COMM_UPLOAD_FACESNAP_RESULT, 1 = NET_DVR_FACE_DETECTION
-  struSetupAlarmParam.bySupport = 0x0c;             // bit0: Whether to upload picture: 0 = yes, 1 = no
-                                                    // bit1: Whether to enable ANR: 0 = no, 1 = yes
-                                                    // bit4: Whether to upload behavior analysis events of all detection targets: 0 = no, 1 = yes
-                                                    // bit5: Whether to enable all-day event or alarm uploading: 0 = no, 1 = yes
-  //struSetupAlarmParam.byBrokenNetHttp = 0;          //
-  //struSetupAlarmParam.byDeployType = 0;             // Arming type: 0 = arm via client software, 1 = real-time arming.
-  //struSetupAlarmParam.bySubScription = 0;           // Bit7: Whether to upload picture after subscribing motion detection: 0 = no, 1 = yes
-
-  long handle = NET_DVR_SetupAlarmChan_V50(id, &struSetupAlarmParam, NULL, 0);
-
-  if (handle < 0)
+  else
   {
-    printf("NET_DVR_SetupAlarmChan_V50 error, %d\n", NET_DVR_GetLastError());
-    NET_DVR_Logout(id);
-    return false;
-  }
+    //---------------------------------------
+    // Enable Arming Mode V5.1
+    NET_DVR_SETUPALARM_PARAM_V50 struSetupAlarmParam = { 0 };
+    struSetupAlarmParam.dwSize = sizeof(struSetupAlarmParam);
+    struSetupAlarmParam.byLevel = 1;                  // Arming priority: 0-high, 1-medium, 2-low
+    struSetupAlarmParam.byAlarmInfoType = 1;          // Intel. traffic alarm type: 0-old (NET_DVR_PLATE_RESULT),1-new (NET_ITS_PLATE_RESULT).
+    struSetupAlarmParam.byRetAlarmTypeV40 = 1;        // Motion detection, video loss, video tampering, and alarm input alarm information is sent NET_DVR_ALARMINFO_V40
+    struSetupAlarmParam.byRetDevInfoVersion = 1;      // Alarm types of CVR: 0 = NET_DVR_ALARMINFO_DEV, 1 = NET_DVR_ALARMINFO_DEV_V40
+    struSetupAlarmParam.byRetVQDAlarmType = 1;        // VQD alarm types: 0 = COMM_ALARM_VQD, 1 = COMM_ALARM_VQD_EX
+    struSetupAlarmParam.byFaceAlarmDetection = 1;     // 0 = COMM_UPLOAD_FACESNAP_RESULT, 1 = NET_DVR_FACE_DETECTION
+    struSetupAlarmParam.bySupport = 0x0c;             // bit0: Whether to upload picture: 0 = yes, 1 = no
+                                                      // bit1: Whether to enable ANR: 0 = no, 1 = yes
+                                                      // bit4: Whether to upload behavior analysis events of all detection targets: 0 = no, 1 = yes
+                                                      // bit5: Whether to enable all-day event or alarm uploading: 0 = no, 1 = yes
+    //struSetupAlarmParam.byBrokenNetHttp = 0;          //
+    //struSetupAlarmParam.byDeployType = 0;             // Arming type: 0 = arm via client software, 1 = real-time arming.
+    //struSetupAlarmParam.bySubScription = 0;           // Bit7: Whether to upload picture after subscribing motion detection: 0 = no, 1 = yes
 
-  /* Just playing, here
-  DWORD dwReturn = 0;
-  UINT  m_iFollowChan;
-  UINT  m_iMainChan;
-  if (NET_DVR_GetDVRConfig(handle, NET_DVR_GET_PTZPOS, m_iFollowChan, &m_struCurCBPPoint.struPtzPos, sizeof(NET_DVR_PTZPOS), &dwReturn))
-  {
-    printf("NET_DVR_GET_PTZPOS %d t%d z%d\n", m_struCurCBPPoint.struPtzPos.wPanPos, m_struCurCBPPoint.struPtzPos.wTiltPos, m_struCurCBPPoint.struPtzPos.wZoomPos);
-    m_struCurCBPPoint.struPtzPos.wPanPos += 100;
-    NET_DVR_SetDVRConfig(handle, NET_DVR_SET_PTZPOS, m_iFollowChan, &m_struCurCBPPoint.struPtzPos, sizeof(NET_DVR_PTZPOS));
-    NET_DVR_PTZPreset_Other(handle, 1, GOTO_PRESET, 4);
-    //NET_DVR_PTZPreset(handle, GOTO_PRESET, 1);
-    //NET_DVR_PTZPreset_EX(handle, GOTO_PRESET, 1);
-  }
-  */
+    long handle = NET_DVR_SetupAlarmChan_V50(id, &struSetupAlarmParam, NULL, 0);
 
-  _dev_info_ camera = {0};
-  camera.devId = strdup(devId.c_str());
-  camera.userID = id;
-  lDevices.push_back(camera);
+    if (handle < 0)
+    {
+      printf("NET_DVR_SetupAlarmChan_V50 error, %d\n", NET_DVR_GetLastError());
+      NET_DVR_Logout(id);
+      id = -1;
+    }
+    else
+    {
+      _dev_info_ camera = {0};
+      camera.devId  = devId;
+      camera.id     = id;
+      camera.handle = handle;   // Do I need this?
+      lDevices.push_back(camera);
+    }
+  }
 
   return id;
 }
