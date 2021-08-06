@@ -27,19 +27,24 @@ class hik_client *hikc;
 // TODO: Thread safe queue
 std::queue <char *> msgQueue;
 
-// Easy to use list of commands we respond and the associated function
-// Caveat: Needs to be in alphabetical order!
+/*********************************************************************************/
+/* Easy to use list of commands we respond and the associated function           */
+/* Caveat: Needs to be in alphabetical order!                                    */
+/*********************************************************************************/
 hikmqtt::command hikmqtt::command_list[] = {
-  { "call_preset",        &hikmqtt::call_ptz_preset },
-  { "delete_preset",      &hikmqtt::delete_ptz_preset },
-  { "get_dev_info",       &hikmqtt::get_dev_info },
-  { "get_ptz_pos",        &hikmqtt::get_ptz_pos },
-  { "set_preset",         &hikmqtt::set_ptz_preset },
+  { "call_preset",             &hikmqtt::call_preset_num },
+  { "delete_preset",           &hikmqtt::delete_preset_num },
+  { "get_dvr_info",            &hikmqtt::get_dvr_info },
+  { "get_preset_details",      &hikmqtt::get_preset_details },
+  { "get_ptz_pos",             &hikmqtt::get_ptz_pos },
+  { "ptz_move",                &hikmqtt::ptz_move },
+  { "set_preset",              &hikmqtt::set_preset_num },
+  { "update_preset_names",     &hikmqtt::update_preset_names },
 };
 #define LCTOP ((sizeof(hikmqtt::command_list) / sizeof(struct hikmqtt::command)) -1)
 
 /*********************************************************************************/
-// * Program Proper
+/* Signal handler to clean up on forced exit                                     */
 /*********************************************************************************/
 void signalHandler( int signum )
 {
@@ -50,7 +55,22 @@ void signalHandler( int signum )
   exit(signum);
 }
 
-void hikmqtt::set_ptz_preset(int devId, cJSON *cmdArgs)
+/*********************************************************************************/
+/* Request to update our list of preset names (does nothing else)                */
+/*********************************************************************************/
+void hikmqtt::update_preset_names(int devId, cJSON *cmdArgs)
+{
+  int cur_preset = -1;
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(channel) )
+  {
+    hikc->update_preset_names(devId, channel->valueint);
+  }
+}
+/*********************************************************************************/
+/* Set the current view as preset (x) for specified device.                      */
+/*********************************************************************************/
+void hikmqtt::set_preset_num(int devId, cJSON *cmdArgs)
 {
   cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
@@ -59,7 +79,10 @@ void hikmqtt::set_ptz_preset(int devId, cJSON *cmdArgs)
     hikc->ptz_preset(devId, channel->valueint, SET_PRESET, preset->valueint);
   }
 }
-void hikmqtt::call_ptz_preset(int devId, cJSON *cmdArgs)
+/*********************************************************************************/
+/* Change the view of the specified device to preset (x)                         */
+/*********************************************************************************/
+void hikmqtt::call_preset_num(int devId, cJSON *cmdArgs)
 {
   cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
@@ -68,7 +91,10 @@ void hikmqtt::call_ptz_preset(int devId, cJSON *cmdArgs)
     hikc->ptz_preset(devId, channel->valueint, GOTO_PRESET, preset->valueint);
   }
 }
-void hikmqtt::delete_ptz_preset(int devId, cJSON *cmdArgs)
+/*********************************************************************************/
+/* Delete the specified preset on the specified device.                          */
+/*********************************************************************************/
+void hikmqtt::delete_preset_num(int devId, cJSON *cmdArgs)
 {
   cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
@@ -77,13 +103,52 @@ void hikmqtt::delete_ptz_preset(int devId, cJSON *cmdArgs)
     hikc->ptz_preset(devId, channel->valueint, CLE_PRESET, preset->valueint);
   }
 }
-void hikmqtt::get_dev_info(int devId, cJSON *cmdArgs)
+/*********************************************************************************/
+/* Get some details of the specified device.                                     */
+/*********************************************************************************/
+void hikmqtt::get_dvr_info(int devId, cJSON *cmdArgs)
 {
-  //std::cout << devId << data << std::endl;
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(channel) )
+  {
+    hikc->get_dvr_config(devId, channel->valueint);
+  }
 }
+/*********************************************************************************/
+/* Get the pan, tilt, zoom, etc of the specified device.                         */
+/*********************************************************************************/
 void hikmqtt::get_ptz_pos(int devId, cJSON *cmdArgs)
 {
-  //std::cout << devId << data << std::endl;
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  {
+    hikc->get_ptz_pos(devId, channel->valueint);
+  }
+}
+/*********************************************************************************/
+/* Get the pan, tilt, zoom, etc of the specified preset.                         */
+/*********************************************************************************/
+void hikmqtt::get_preset_details(int devId, cJSON *cmdArgs)
+{
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  {
+    hikc->get_preset_details(devId, channel->valueint, preset->valueint);
+  }
+}
+/*********************************************************************************/
+/* Move the specified device.                                                    */
+/*********************************************************************************/
+void hikmqtt::ptz_move(int devId, cJSON *cmdArgs)
+{
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  cJSON *direct  = cJSON_GetObjectItem(cmdArgs,"direction");
+  if ( cJSON_IsNumber(channel) && cJSON_IsNumber(direct) )
+  {
+    hikc->ptz_controlwithspeed(devId, channel->valueint, PAN_LEFT, 1);
+  }
 }
 
 /*********************************************************************************/
@@ -106,6 +171,9 @@ int hikmqtt::str_cmp(const char *arg1, const char *arg2)
   return(0);
 }
 
+/*********************************************************************************/
+/* Lookup the passed command with an efficient binary search                     */
+/*********************************************************************************/
 int hikmqtt::lookup_command(const char *arg)
 {
   int top=LCTOP;
@@ -126,6 +194,9 @@ int hikmqtt::lookup_command(const char *arg)
   return(-1);
 }
 
+/*********************************************************************************/
+/* Process MQTT messages for commands to respond too.                            */
+/*********************************************************************************/
 void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
 {
   int payload_size = MAX_PAYLOAD + 1;
@@ -165,6 +236,8 @@ void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
 }
 
 /*********************************************************************************/
+/* Our MQTT callback handler.                                                    */
+/*********************************************************************************/
 void hikmqtt::on_message(const struct mosquitto_message *message, void *userData)
 {
   hikmqtt *ptr = (hikmqtt *)userData;
@@ -172,7 +245,9 @@ void hikmqtt::on_message(const struct mosquitto_message *message, void *userData
 }
 
 /*********************************************************************************/
-int hikmqtt::read_config()
+/* Load the config file from disk and check for syntax errors.                   */
+/*********************************************************************************/
+int hikmqtt::load_config()
 {
   try
   {
@@ -194,6 +269,8 @@ int hikmqtt::read_config()
 }
 
 /*********************************************************************************/
+/* Load and process the config file for our dynamic settings...                  */
+/*********************************************************************************/
 int hikmqtt::read_config(const char *configFile)
 {
   int rc;
@@ -201,7 +278,7 @@ int hikmqtt::read_config(const char *configFile)
 
   cfgFile = configFile;
 
-  rc = read_config();
+  rc = load_config();
   if (!rc)
   {
     const Setting &root = cfg.getRoot();
@@ -242,6 +319,8 @@ int hikmqtt::read_config(const char *configFile)
   return rc;
 }
 
+/*********************************************************************************/
+/* Our main program loop (where all the actions happens)                         */
 /*********************************************************************************/
 int hikmqtt::run(void)
 {
@@ -301,6 +380,9 @@ int hikmqtt::run(void)
   return rc;
 }
 
+/*********************************************************************************/
+/* The Program Start...                                                          */
+/*********************************************************************************/
 int main(void)
 {
   int rc;

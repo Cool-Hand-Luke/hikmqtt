@@ -20,12 +20,12 @@ struct _device_
 
 class hikmqtt
 {
-  Config cfg;
   std::list <_device_> devices;
   string mqtt_server, mqtt_user, mqtt_pass;
   const char *mqtt_sub, *mqtt_pub;
-  int mqtt_port;
   const char *cfgFile;
+  int mqtt_port;
+  Config cfg;
 
   struct command
   {
@@ -43,13 +43,18 @@ public:
   int  run(void);
 
 private:
-  void set_ptz_preset(int devId, cJSON *cmdArgs);
-  void call_ptz_preset(int devId, cJSON *cmdArgs);
-  void delete_ptz_preset(int devId, cJSON *cmdArgs);
-  void get_dev_info(int devId, cJSON *cmdArgs);
+  void call_preset_num(int devId, cJSON *cmdArgs);
+  void delete_preset_num(int devId, cJSON *cmdArgs);
+  void get_cur_preset(int devId, cJSON *cmdArgs);
+  void get_dvr_info(int devId, cJSON *cmdArgs);
+  void ptz_move(int devId, cJSON *cmdArgs);
+  void get_preset_details(int devId, cJSON *cmdArgs);
   void get_ptz_pos(int devId, cJSON *cmdArgs);
+  void set_preset_num(int devId, cJSON *cmdArgs);
+  void update_preset_names(int devId, cJSON *cmdArgs);
 
-  int  read_config();
+
+  int  load_config();
   void hikdaemon(void);
   int  str_cmp(const char *arg1, const char *arg2);
   int  lookup_command(const char *arg);

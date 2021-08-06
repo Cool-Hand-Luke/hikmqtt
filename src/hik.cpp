@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <math.h>
 #include <iostream>
+#include <iomanip>
+#include <cctype>
 #include <queue>
 #include <algorithm>
 #include <cjson/cJSON.h>
@@ -14,10 +16,137 @@
 #include "mqtt.h"
 #include "hik.h"
 
-std::queue<char *> *messageQueue;
-void CALLBACK MessageCallback(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser);
+//#define HIK_DEBUG
+#define SDK_LOGLEVEL 0
 
 using namespace std;
+std::queue<char *> *messageQueue;
+
+void CALLBACK MessageCallback_V51(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser);
+BOOL CALLBACK MessageCallback_V31(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser);
+void CALLBACK ExceptionCallBack(DWORD dwType, LONG lUserID, LONG lHandle, void *pUser);
+
+/***************************************************************************/
+/*  Debug helper.                                                          */
+/***************************************************************************/
+// Source: https://codereview.stackexchange.com/questions/165120/printing-hex-dumps-for-diagnostics
+// -----------------
+std::ostream& hex_dump(std::ostream& os, const void *buffer, std::size_t bufsize, bool showPrintableChars = true)
+{
+  if (buffer == nullptr)
+  {
+    return os;
+  }
+  auto oldFormat = os.flags();
+  auto oldFillChar = os.fill();
+  constexpr std::size_t maxline{20};
+  // create a place to store text version of string
+  char renderString[maxline+1];
+  char *rsptr{renderString};
+  // convenience cast
+  const unsigned char *buf{reinterpret_cast<const unsigned char *>(buffer)};
+
+  for (std::size_t linecount=maxline; bufsize; --bufsize, ++buf)
+  {
+    os << std::setw(2) << std::setfill('0') << std::hex << static_cast<unsigned>(*buf) << ' ';
+    *rsptr++ = std::isprint(*buf) ? *buf : '.';
+    if (--linecount == 0)
+    {
+      *rsptr++ = '\0';  // terminate string
+      if (showPrintableChars)
+      {
+        os << " | " << renderString;
+      }
+      os << '\n';
+      rsptr = renderString;
+      linecount = std::min(maxline, bufsize);
+    }
+  }
+  // emit newline if we haven't already
+  if (rsptr != renderString)
+  {
+    if (showPrintableChars)
+    {
+      for (*rsptr++ = '\0'; rsptr != &renderString[maxline+1]; ++rsptr)
+      {
+        os << "   ";
+      }
+      os << " | " << renderString;
+    }
+    os << '\n';
+  }
+
+  os.fill(oldFillChar);
+  os.flags(oldFormat);
+  return os;
+}
+
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+void CALLBACK ExceptionCallBack(DWORD dwType, LONG lUserID, LONG lHandle, void *pUser)
+{
+  std::cerr << "ExceptionCallBack lUserID: " << lUserID << ", handle: " << lHandle << ", user data: %p" << pUser << std::endl;
+
+  switch(dwType)
+  {
+    case EXCEPTION_AUDIOEXCHANGE:
+      std::cerr << "Audio exchange exception!" << std::endl;
+      break;
+    case EXCEPTION_ALARM:
+      std::cerr << "Alarm exception!" << std::endl;
+      break;
+    case EXCEPTION_ALARMRECONNECT:
+      std::cerr << "Alarm reconnect." << std::endl;
+      break;
+    case ALARM_RECONNECTSUCCESS:
+      std::cerr << "Alarm reconnect success." << std::endl;
+      break;
+    case EXCEPTION_SERIAL:
+      std::cerr << "Serial exception!" << std::endl;
+      break;
+    case EXCEPTION_PREVIEW:
+      std::cerr << "Preview exception!" << std::endl;
+      break;
+    case EXCEPTION_RECONNECT:
+      std::cerr << "preview reconnecting." << std::endl;
+      break;
+  case PREVIEW_RECONNECTSUCCESS:
+      std::cerr << "Preview reconncet success." << std::endl;
+      break;
+  default:
+    break;
+  }
+}
+
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+void CALLBACK MessageCallback_V30(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void *pUser)
+{
+  hik_client *ptr = (hik_client *)pUser;
+  ptr->proc_callback_message(lCommand, pAlarmer, pAlarmInfo, dwBufLen);
+}
+
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+BOOL CALLBACK MessageCallback_V31(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void *pUser)
+{
+  hik_client *ptr = (hik_client *)pUser;
+  ptr->proc_callback_message(lCommand, pAlarmer, pAlarmInfo, dwBufLen);
+
+  return true;
+}
+
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+void CALLBACK MessageCallback_V51(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void *pUser)
+{
+  hik_client *ptr = (hik_client *)pUser;
+  ptr->proc_callback_message(lCommand, pAlarmer, pAlarmInfo, dwBufLen);
+}
 
 hik_client::hik_client(std::queue <char *> *msgQ)
 {
@@ -25,9 +154,12 @@ hik_client::hik_client(std::queue <char *> *msgQ)
   init_hik();
 }
 
-long hik_client::get_handle(int devId)
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+_dev_info_ *hik_client::get_device_byDevId(int devId)
 {
-  long handle = -1;
+  _dev_info_ *dev = NULL;
 
   // Iterate through our cameras to start receiving notifications
   std::list <_dev_info_>::iterator it;
@@ -35,32 +167,59 @@ long hik_client::get_handle(int devId)
   {
     if ( it->devId == devId )
     {
-      handle = it->handle;
+      dev = &(*it);
       break;
     }
   }
 
-  return handle;
+  return dev;
 }
 
-int hik_client::get_devId(int id)
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+_dev_info_ *hik_client::get_device_byUserId(DWORD userId)
 {
-  int devId = -1;
+  _dev_info_ *dev = NULL;
 
   // Iterate through our cameras to start receiving notifications
   std::list <_dev_info_>::iterator it;
   for (it = lDevices.begin(); it != lDevices.end(); it++)
   {
-    if ( it->id == id )
+    if ( it->userId == userId )
     {
-      devId = it->devId;
+      dev = &(*it);
       break;
     }
   }
 
-  return devId;
+  return dev;
 }
 
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+_dev_info_ *hik_client::get_device_byHandle(DWORD handle)
+{
+  _dev_info_ *dev = NULL;
+
+  // Iterate through our cameras to start receiving notifications
+  std::list <_dev_info_>::iterator it;
+  for (it = lDevices.begin(); it != lDevices.end(); it++)
+  {
+    if ( it->handle == handle )
+    {
+      dev = &(*it);
+      break;
+    }
+  }
+
+  return dev;
+}
+
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
 hik_client::~hik_client()
 {
   // Stop listen server
@@ -69,20 +228,24 @@ hik_client::~hik_client()
     bool iRet = NET_DVR_StopListen_V30(iHandle);
     if (!iRet)
     {
-      printf("NET_DVR_StopListen_V30() Error: %d\n", NET_DVR_GetLastError());
+      int lError = NET_DVR_GetLastError();
+      printf("NET_DVR_StopListen_V30() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
     }
   }
 
   // Log out all devices
   for (auto const& i : lDevices)
   {
-    NET_DVR_Logout(i.id);
+    NET_DVR_Logout(i.userId);
   }
 
   // Release SDK resource
   NET_DVR_Cleanup();
 }
 
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
 void hik_client::init_hik()
 {
   //---------------------------------------
@@ -91,25 +254,32 @@ void hik_client::init_hik()
 
   //---------------------------------------
   // Set connection time and reconnection time
-  NET_DVR_SetConnectTime(2000, 1);
-  NET_DVR_SetReconnect(10000, true);
+  NET_DVR_SetConnectTime(2000, 3);
+  NET_DVR_SetReconnect(1000, true);
+
+  //---------------------------------------
+  // Our exception handler
+  // ----
+  NET_DVR_SetExceptionCallBack_V30(0, nullptr, ExceptionCallBack, this);
 
   //---------------------------------------
   // Our callback handler
   // ----
-  // We only need one of these as the last one overwrites
-  // any previous. So, move it here and save some CPU.
-  NET_DVR_SetDVRMessageCallBack_V51(0, MessageCallback, this);
+  NET_DVR_SetDVRMessageCallBack_V31(MessageCallback_V31, this);
+  //NET_DVR_SetDVRMessageCallBack_V51(0, MessageCallback_V51, this);
 
   //---------------------------------------
   // Compiled SDK Version
   SDK_Version();
 
   //---------------------------------------
-  // Logging
-  //NET_DVR_SetLogToFile(3, (char *)"./sdkLog");
+  // Logging, 1 = Err, 2 = Err + Dev, 3 = All
+  NET_DVR_SetLogToFile(SDK_LOGLEVEL, NULL);
 }
 
+/***************************************************************************/
+/* Display the SDK version we were compiled with.                          */
+/***************************************************************************/
 void hik_client::SDK_Version()
 {
   unsigned int uiVersion = NET_DVR_GetSDKBuildVersion();
@@ -122,31 +292,137 @@ void hik_client::SDK_Version()
       (0x000000ff & uiVersion));
   printf(strTemp);
 }
-/*
 
-  DWORD dwReturn = 0;
-  UINT  m_iFollowChan;
-  UINT  m_iMainChan;
-  if (NET_DVR_GetDVRConfig(handle, NET_DVR_GET_PTZPOS, m_iFollowChan, &m_struCurCBPPoint.struPtzPos, sizeof(NET_DVR_PTZPOS), &dwReturn))
+/***************************************************************************/
+/* Get and return the current camera pan, tilt, zoom position.             */
+/***************************************************************************/
+void hik_client::get_ptz_pos(int devId, long channel)
+{
+  int cur_preset = -1;
+
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
   {
-    printf("NET_DVR_GET_PTZPOS %d t%d z%d\n", m_struCurCBPPoint.struPtzPos.wPanPos, m_struCurCBPPoint.struPtzPos.wTiltPos, m_struCurCBPPoint.struPtzPos.wZoomPos);
-    m_struCurCBPPoint.struPtzPos.wPanPos += 100;
-    NET_DVR_SetDVRConfig(handle, NET_DVR_SET_PTZPOS, m_iFollowChan, &m_struCurCBPPoint.struPtzPos, sizeof(NET_DVR_PTZPOS));
-    NET_DVR_PTZPreset_Other(handle, 1, GOTO_PRESET, 4);
-  }
-*/
+    DWORD dwReturn = 0;
+    NET_DVR_PTZPOS struPtzPos = {0};
 
+    if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_PTZPOS, channel, &struPtzPos, sizeof(struPtzPos), &dwReturn))
+    {
+      int lError = NET_DVR_GetLastError();
+      printf("get_ptz_pos() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+    }
+    else
+    {
+    }
+  }
+
+  //return cur_preset;
+}
+
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+void hik_client::get_dvr_config(int devId, long channel)
+{
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    DWORD dwReturn = 0;
+    NET_DVR_DEVICECFG_V40 struDevCfg = {0};
+
+    if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_DEVICECFG_V40, 0, &struDevCfg, sizeof(NET_DVR_DEVICECFG_V40), &dwReturn))
+    {
+      int lError = NET_DVR_GetLastError();
+      printf("get_preset_names() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+    }
+    else
+    {
+      std::cout << "--------------------" << std::endl;
+      std::cout << "devId: " << devId << std::endl;
+      std::cout << "DVR Name: " << struDevCfg.sDVRName << std::endl;
+      std::cout << "DVR ID: " << struDevCfg.dwDVRID << std::endl;
+      std::cout << "Serial Number: " << struDevCfg.sSerialNumber << std::endl;
+      std::cout << "Dev Type Name: " << struDevCfg.byDevTypeName << std::endl;
+      std::cout << "VGA Ports: " << struDevCfg.byVGANum << std::endl;
+    }
+  }
+}
+void hik_client::set_dvr_config(int devId, long channel)
+{
+  //NET_DVR_SetDVRConfig(g_pMainDlg->m_struDeviceInfo.lLoginID, NET_DVR_SET_PTZPOS, 0, &m_ptzPos, sizeof(NET_DVR_PTZPOS));
+}
+
+void hik_client::get_preset_details(int devId, long channel, int presetIndx)
+{
+}
+
+/***************************************************************************/
+/*  Get a list of all the presets for the specified device                 */
+/***************************************************************************/
+int hik_client::update_preset_names(int devId, long channel)
+{
+  int cur_preset = -1;
+
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    DWORD dwReturn = 0;
+    NET_DVR_PTZPOS struPtzPos = {0};
+
+    if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_PRESET_NAME, dev->struDeviceInfoV40.struDeviceV30.byStartChan, &dev->struParams, sizeof(NET_DVR_PRESET_NAME) * MAX_PRESET_V40, &dwReturn))
+    {
+      int lError = NET_DVR_GetLastError();
+      printf("get_preset_names() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+    }
+    else
+    {
+      cur_preset = 0;
+    }
+  }
+
+  return cur_preset;
+}
+
+/***************************************************************************/
+/*  Set / Call / Clear the specified preset.                               */
+/***************************************************************************/
 void hik_client::ptz_preset(int devId, long channel, int ptzCmd, int presetIndx)
 {
-  long handle = get_handle(devId);
-
-  // NET_DVR_PTZPreset_Other: The device returns success after receiving the control command.
-  NET_DVR_PTZPreset_Other(handle, channel, ptzCmd, presetIndx);
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    NET_DVR_PTZPreset_Other(dev->userId, channel, ptzCmd, presetIndx);
+  }
 }
-void hik_client::get_ptz_pos(int devId, const char *data)
+
+/***************************************************************************/
+/*  Zoom / Focus / Tilt / Pan the specified device.                        */
+/***************************************************************************/
+void hik_client::ptz_controlwithspeed(int devId, long channel, int dir, int speed)
 {
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    // Control with speed start
+    if (!NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, dir, 0, speed))
+    {
+      int lError = NET_DVR_GetLastError();
+      printf("get_cur_preset() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+    }
+    else
+    {
+      std::cout << "Set" << std::endl;
+      usleep(1000000);
+      std::cout << "end" << std::endl;
+      // Control with speed end
+      NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, dir, 1, speed);
+    }
+  }
 }
 
+/***************************************************************************/
+/*  COMM_ALARM_V30 callback.                                               */
+/***************************************************************************/
 void hik_client::ProcAlarmV30(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
   NET_DVR_ALARMINFO_V30 struAlarmInfoV30;
@@ -205,12 +481,15 @@ void hik_client::ProcAlarmV30(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD
   }
 }
 
+/***************************************************************************/
+/*  COMM_ALARM_V40 callback.                                               */
+/***************************************************************************/
 void hik_client::ProcAlarmV40(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
   NET_DVR_ALARMINFO_V40 struAlarmInfoV40;
   memcpy(&struAlarmInfoV40, pAlarmInfo, sizeof(NET_DVR_ALARMINFO_V40));
 
-  printf("COMM_ALARM: Alarm type is %d\n", struAlarmInfoV40.struAlarmFixedHeader.dwAlarmType);
+  printf("COMM_ALARM_V40: Alarm type is %d\n", struAlarmInfoV40.struAlarmFixedHeader.dwAlarmType);
 
   switch (struAlarmInfoV40.struAlarmFixedHeader.dwAlarmType)
   {
@@ -254,15 +533,28 @@ void hik_client::ProcAlarmV40(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD
   }
 }
 
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
 void hik_client::ProcDevStatusChanged(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
+  int devId = get_device_byUserId(pAlarmer->lUserID)->devId;
+
+  std::cout << "Device: " << devId << std::endl;
+  //hex_dump(std::cout, pAlarmInfo, dwBufLen);
 }
 
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
 void hik_client::procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
+  int devId = get_device_byUserId(pAlarmer->lUserID)->devId;
+
   NET_DVR_GIS_UPLOADINFO  struGISInfo = { 0 };
   memcpy(&struGISInfo, pAlarmInfo, sizeof(struGISInfo));
 
+  //hex_dump(std::cout, pAlarmInfo, dwBufLen);
   /*
   printf("--------------------------\n");
   printf("PtzPos{PanPos: %.3f, TiltPos: %.1f, ZoomPos: %.1f}\n",struGISInfo.struPtzPos.fPanPos, struGISInfo.struPtzPos.fTiltPos, struGISInfo.struPtzPos.fZoomPos);
@@ -283,9 +575,12 @@ void hik_client::procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, D
 #define GET_MINUTE(_time_)    (((_time_)>>6)  & 63)
 #define GET_SECOND(_time_)    (((_time_)>>0)  & 63)
 
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
 void hik_client::ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
-  int devId = get_devId(pAlarmer->lUserID);
+  int devId = get_device_byUserId(pAlarmer->lUserID)->devId;
 
   // New JSON object
   cJSON *hikEvent = cJSON_CreateObject();
@@ -296,17 +591,34 @@ void hik_client::ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWOR
   //cJSON_AddStringToObject(hikEvent, "Type", "Alarm");
   cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
   //cJSON_AddNumberToObject(hikEvent, "uid", (int) pAlarmer->lUserID);
-  cJSON_AddNumberToObject(hikEvent, "ts", (long) struVcaRuleAlarm.dwAbsTime);
+  //cJSON_AddNumberToObject(hikEvent, "ts", (long) struVcaRuleAlarm.dwAbsTime);
   //cJSON_AddStringToObject(hikEvent, "IP", (char *) struVcaRuleAlarm.struDevInfo.struDevIP.sIpV4);
   cJSON_AddNumberToObject(hikEvent, "EventType", (int) struVcaRuleAlarm.struRuleInfo.wEventTypeEx);
   cJSON_AddNumberToObject(hikEvent, "Channel", (int) struVcaRuleAlarm.struDevInfo.byChannel);
   cJSON_AddNumberToObject(hikEvent, "IvmsChannel", (int) struVcaRuleAlarm.struDevInfo.byIvmsChannel);
   cJSON_AddNumberToObject(hikEvent, "RuleID", (int) struVcaRuleAlarm.struRuleInfo.byRuleID);
-  cJSON_AddNumberToObject(hikEvent, "dwID", (int) struVcaRuleAlarm.struTargetInfo.dwID);
+  if ( struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.dwCrossDirection )
+  {
+    cJSON_AddNumberToObject(hikEvent, "dwDir", (int) struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.dwCrossDirection);
+  }
+  //cJSON_AddNumberToObject(hikEvent, "dwID", (int) struVcaRuleAlarm.struTargetInfo.dwID);
   messageQueue->push(cJSON_Print(hikEvent));
   cJSON_Delete(hikEvent);
 
+  /* Using these values to calculate direction seems impossible.
+   * Having delved into it, the devices, regardless of direction, return a line calculated from the left
+   * hand side of the screen to the right. So best we can do, is calculate an angle of travel which could be
+   * travelling in 1 of 2 directions.
+   */
   /*
+  float x = (struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.struPlaneBottom.struEnd.fX - struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.struPlaneBottom.struStart.fX);
+  float y = (struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.struPlaneBottom.struEnd.fY - struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.struPlaneBottom.struStart.fY);
+  printf("Magnitude: %f\n", sqrt((x*x)+(y*y)));
+  printf("Vector = %f, %f\n",  x, y);
+  printf("Angle = %f\n", (atan(y/x) * 180 / 3.142));
+  */
+
+#ifdef HIK_DEBUG
   printf("-----------\n");
   printf("struRuleInfo.byRuleName: %s\n", (char *) struVcaRuleAlarm.struRuleInfo.byRuleName);
   printf("struDevInfo.struDevIP.sIpV4: %s\n", (char *) struVcaRuleAlarm.struDevInfo.struDevIP.sIpV4);
@@ -335,15 +647,12 @@ void hik_client::ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWOR
   float x = (struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.struPlaneBottom.struEnd.fX - struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.struPlaneBottom.struStart.fX);
   float y = (struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.struPlaneBottom.struEnd.fY - struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.struPlaneBottom.struStart.fY);
   printf("Distance: %f\n", sqrt((x*x)+(y*y)));
-  */
+#endif
 }
 
-void CALLBACK MessageCallback(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void *pUser)
-{
-  hik_client *ptr = (hik_client *)pUser;
-  ptr->proc_callback_message(lCommand, pAlarmer, pAlarmInfo, dwBufLen);
-}
-
+/***************************************************************************/
+/* Where we process the data received via callbacks.                       */
+/***************************************************************************/
 void hik_client::proc_callback_message(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
   switch (lCommand)
@@ -355,14 +664,15 @@ void hik_client::proc_callback_message(LONG lCommand, NET_DVR_ALARMER *pAlarmer,
       printf("COMM_ALARM\n");
       break;
     case COMM_ALARM_V30:
-      printf("COMM_ALARM_V30\n");
+      //printf("COMM_ALARM_V30\n");
+      ProcAlarmV30(pAlarmer, pAlarmInfo, dwBufLen);
       break;
     case COMM_ALARM_V40:
-      printf("COMM_ALARM_V40\n");
+      //printf("COMM_ALARM_V40\n");
       ProcAlarmV40(pAlarmer, pAlarmInfo, dwBufLen);
       break;
     case COMM_ALARM_RULE:
-      printf("COMM_ALARM_RULE\n");
+      //printf("COMM_ALARM_RULE\n");
       ProcRuleAlarm(pAlarmer, pAlarmInfo, dwBufLen);
       break;
     case COMM_ALARM_PDC:
@@ -391,37 +701,60 @@ void hik_client::proc_callback_message(LONG lCommand, NET_DVR_ALARMER *pAlarmer,
   }
 }
 
+/***************************************************************************/
+/* A listen server for receiving unsolicited events.                       */
+/***************************************************************************/
 int hik_client::listen_server(string ipAddr, const unsigned int port)
 {
-  iHandle = NET_DVR_StartListen_V30((char *)ipAddr.c_str(), port, MessageCallback, NULL);
-
+  iHandle = NET_DVR_StartListen_V30((char *)ipAddr.c_str(), port, MessageCallback_V30, NULL);
   if ( iHandle < 0 )
   {
-    printf("NET_DVR_StartListen_V30() Error: %d\n", NET_DVR_GetLastError());
+    int lError = NET_DVR_GetLastError();
+    printf("NET_DVR_StartListen_V30() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
   }
 
   return iHandle;
 }
 
+/***************************************************************************/
+/* Add a DVR/NVR device to be monitored.                                   */
+/***************************************************************************/
+//#define LOGIN_V30
 int hik_client::add_source(int devId, string ipAddr, string username, string password)
 {
+  _dev_info_ camera = {0};
+
+  //---------------------------------------
+  // Log in to device
+#ifdef LOGIN_V30
+  NET_DVR_DEVICEINFO_V30 StruDeviceInfoV30;
+  int UserId = NET_DVR_Login_V30((char *)ipAddr.c_str(), 8000, (char *)username.c_str(), (char *)password.c_str(), &StruDeviceInfoV30);
+  if (UserId < 0)
+  {
+    int lError = NET_DVR_GetLastError();
+    printf("NET_DVR_Login_V30() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+  }
+  else
+  {
+    long handle = NET_DVR_SetupAlarmChan_V30(UserId);
+#else
   //---------------------------------------
   // Prepare to login to device
   NET_DVR_USER_LOGIN_INFO struLoginInfo = {0};
-  NET_DVR_DEVICEINFO_V40 struDeviceInfoV40 = {0};
   struLoginInfo.bUseAsynLogin = false;
-
   struLoginInfo.wPort = 8000;
+  struLoginInfo.byLoginMode = 0;   // 0 - SDK Private, 1 = ISAPI  2 = Adaptive (not recommended)
   strncpy(struLoginInfo.sDeviceAddress, ipAddr.c_str(), NET_DVR_DEV_ADDRESS_MAX_LEN);
   strncpy(struLoginInfo.sUserName, username.c_str(), NAME_LEN);
   strncpy(struLoginInfo.sPassword, password.c_str(), NAME_LEN);
 
   //---------------------------------------
   // Log in to device
-  int id = NET_DVR_Login_V40(&struLoginInfo, &struDeviceInfoV40);
-  if (id < 0)
+  int UserId = NET_DVR_Login_V40(&struLoginInfo, &camera.struDeviceInfoV40);
+  if (UserId < 0)
   {
-     printf("Login error, %d\n", NET_DVR_GetLastError());
+     int lError = NET_DVR_GetLastError();
+     printf("NET_DVR_Login_V40() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
   }
   else
   {
@@ -430,7 +763,7 @@ int hik_client::add_source(int devId, string ipAddr, string username, string pas
     NET_DVR_SETUPALARM_PARAM_V50 struSetupAlarmParam = { 0 };
     struSetupAlarmParam.dwSize = sizeof(struSetupAlarmParam);
     struSetupAlarmParam.byLevel = 1;                  // Arming priority: 0-high, 1-medium, 2-low
-    struSetupAlarmParam.byAlarmInfoType = 1;          // Intel. traffic alarm type: 0-old (NET_DVR_PLATE_RESULT),1-new (NET_ITS_PLATE_RESULT).
+    struSetupAlarmParam.byAlarmInfoType = 0;          // Intel. traffic alarm type: 0-old (NET_DVR_PLATE_RESULT),1-new (NET_ITS_PLATE_RESULT).
     struSetupAlarmParam.byRetAlarmTypeV40 = 1;        // Motion detection, video loss, video tampering, and alarm input alarm information is sent NET_DVR_ALARMINFO_V40
     struSetupAlarmParam.byRetDevInfoVersion = 1;      // Alarm types of CVR: 0 = NET_DVR_ALARMINFO_DEV, 1 = NET_DVR_ALARMINFO_DEV_V40
     struSetupAlarmParam.byRetVQDAlarmType = 1;        // VQD alarm types: 0 = COMM_ALARM_VQD, 1 = COMM_ALARM_VQD_EX
@@ -442,25 +775,26 @@ int hik_client::add_source(int devId, string ipAddr, string username, string pas
     //struSetupAlarmParam.byBrokenNetHttp = 0;          //
     //struSetupAlarmParam.byDeployType = 0;             // Arming type: 0 = arm via client software, 1 = real-time arming.
     //struSetupAlarmParam.bySubScription = 0;           // Bit7: Whether to upload picture after subscribing motion detection: 0 = no, 1 = yes
-
-    long handle = NET_DVR_SetupAlarmChan_V50(id, &struSetupAlarmParam, NULL, 0);
-
+ 
+    long handle = NET_DVR_SetupAlarmChan_V50(UserId, &struSetupAlarmParam, NULL, 0);
+#endif
     if (handle < 0)
     {
-      printf("NET_DVR_SetupAlarmChan_V50 error, %d\n", NET_DVR_GetLastError());
-      NET_DVR_Logout(id);
-      id = -1;
+      int lError = NET_DVR_GetLastError();
+      printf("NET_DVR_SetupAlarmChan_Vxx() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+      NET_DVR_Logout(UserId);
+      UserId = -1;
     }
     else
     {
-      _dev_info_ camera = {0};
       camera.devId  = devId;
-      camera.id     = id;
-      camera.handle = handle;   // Do I need this?
+      camera.userId = UserId;
+      camera.handle = handle;
       lDevices.push_back(camera);
+      std::cout << "Device added (devId: " << devId << ", UserId: " << UserId << ", handle: " << handle << ")" << std::endl;
     }
   }
 
-  return id;
+  return UserId;
 }
 
