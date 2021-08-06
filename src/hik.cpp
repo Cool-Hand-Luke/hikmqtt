@@ -7,7 +7,6 @@
 #include <iostream>
 #include <iomanip>
 #include <cctype>
-#include <queue>
 #include <algorithm>
 #include <cjson/cJSON.h>
 
@@ -20,7 +19,7 @@
 #define SDK_LOGLEVEL 0
 
 using namespace std;
-std::queue<char *> *messageQueue;
+moodycamel::BlockingConcurrentQueue <char *> *messageQueue;
 
 void CALLBACK MessageCallback_V51(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser);
 BOOL CALLBACK MessageCallback_V31(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser);
@@ -148,7 +147,7 @@ void CALLBACK MessageCallback_V51(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char
   ptr->proc_callback_message(lCommand, pAlarmer, pAlarmInfo, dwBufLen);
 }
 
-hik_client::hik_client(std::queue <char *> *msgQ)
+hik_client::hik_client(moodycamel::BlockingConcurrentQueue <char *> *msgQ)
 {
   messageQueue = msgQ;
   init_hik();
@@ -602,7 +601,7 @@ void hik_client::ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWOR
     cJSON_AddNumberToObject(hikEvent, "dwDir", (int) struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.dwCrossDirection);
   }
   //cJSON_AddNumberToObject(hikEvent, "dwID", (int) struVcaRuleAlarm.struTargetInfo.dwID);
-  messageQueue->push(cJSON_Print(hikEvent));
+  messageQueue->enqueue(cJSON_Print(hikEvent));
   cJSON_Delete(hikEvent);
 
   /* Using these values to calculate direction seems impossible.

@@ -6,7 +6,6 @@
 #include <unistd.h>
 #include <csignal>
 #include <thread>
-#include <queue>
 #include <functional>
 #include <type_traits>
 #include <cjson/cJSON.h>
@@ -15,6 +14,7 @@
 #include "main.h"
 #include "mqtt.h"
 #include "hik.h"
+#include "blockingconcurrentqueue.h"
 
 using namespace std;
 
@@ -24,8 +24,7 @@ class hikmqtt *hm;
 class mqtt_client *mqtt;
 class hik_client *hikc;
 
-// TODO: Thread safe queue
-std::queue <char *> msgQueue;
+moodycamel::BlockingConcurrentQueue <char *> msgQueue;
 
 /*********************************************************************************/
 /* Easy to use list of commands we respond and the associated function           */
@@ -324,6 +323,7 @@ int hikmqtt::read_config(const char *configFile)
 /*********************************************************************************/
 int hikmqtt::run(void)
 {
+  const char *alert;
   int rc = 0;
 
   // Connect to our MQTT server
@@ -352,31 +352,25 @@ int hikmqtt::run(void)
       switch (rc)
       {
       case 4:
-        std::cout << "Authentication Error: " << rc << std::endl;
+        std::cerr << "Authentication Error: " << rc << std::endl;
         break;
       case 5:
-        std::cout << "Connection Refused: " << rc << std::endl;
+        std::cerr << "Connection Refused: " << rc << std::endl;
         mqtt->reconnect();
         break;
       default:
-        std::cout << "Reconnecting on Code: " << rc << std::endl;
+        std::cerr << "Reconnecting on Code: " << rc << std::endl;
         break;
       }
 
       mqtt->reconnect();
-      sleep(1);
     }
 
-    while ( !msgQueue.empty() )
-    {
-      const char *alert = msgQueue.front();
-      std::cout << "alert: " << alert << std::endl;
-      mqtt->pub(mqtt_pub, alert);
-      msgQueue.pop();
-    }
-
-    usleep(20);
+    msgQueue.wait_dequeue(alert);
+    std::cerr << "alert: " << alert << std::endl;
+    mqtt->pub(mqtt_pub, alert);
   }
+
   return rc;
 }
 

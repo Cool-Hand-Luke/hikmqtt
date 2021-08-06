@@ -5,10 +5,10 @@
 #include <string>
 #include <string.h>
 #include <list>
-#include <queue>
 #include <mosquittopp.h>
 
 #include "mqtt.h" 
+#include "blockingconcurrentqueue.h"
 
 using namespace std;
 
@@ -32,7 +32,7 @@ class hik_client
 
 public:
   // Construct
-  hik_client(std::queue <char *> *msgQ);
+  hik_client(moodycamel::BlockingConcurrentQueue <char *> *msgQ);
   hik_client() {};
   // Destruct
   ~hik_client();
