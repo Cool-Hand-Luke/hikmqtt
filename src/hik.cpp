@@ -325,10 +325,12 @@ void hik_client::get_ptz_pos(int devId, long channel)
 }
 
 /***************************************************************************/
-/*                                                                         */
+/* Retrieve information about the requested DVR/NVR                        */
 /***************************************************************************/
 void hik_client::get_dvr_config(int devId, long channel)
 {
+  char tmpBuf[MAX_BUFSIZE+1];
+
   _dev_info_ *dev = get_device_byDevId(devId);
   if ( dev )
   {
@@ -342,26 +344,36 @@ void hik_client::get_dvr_config(int devId, long channel)
     }
     else
     {
+      memset(tmpBuf, 0, MAX_BUFSIZE);
       cJSON *hikEvent = cJSON_CreateObject();
-      cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
-      cJSON_AddNumberToObject(hikEvent, "DVR ID", (long) struDevCfg.dwDVRID);
-      cJSON_AddStringToObject(hikEvent, "DVR Name:", (char *) struDevCfg.sDVRName );
-      cJSON_AddStringToObject(hikEvent, "DVR Type:", (char *) struDevCfg.byDevTypeName );
-      cJSON_AddStringToObject(hikEvent, "Serial", (char *) struDevCfg.sSerialNumber);
-      //memcpy(cTemp, struDevCfg.dwDVRID, NAME_LEN);
 
-      char tmpBuf[512];
+      cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
+      cJSON_AddNumberToObject(hikEvent, "InfoT", INFO_DVR_CONFIG);
+      cJSON_AddNumberToObject(hikEvent, "DVR ID", (long) struDevCfg.dwDVRID);
+      cJSON_AddStringToObject(hikEvent, "DVR Name", (char *) struDevCfg.sDVRName );
+      cJSON_AddStringToObject(hikEvent, "DVR Type", (char *) struDevCfg.byDevTypeName );
+      cJSON_AddStringToObject(hikEvent, "Serial", (char *) struDevCfg.sSerialNumber);
+
       sprintf(tmpBuf, "0x%x", struDevCfg.dwHardwareVersion);
       cJSON_AddStringToObject(hikEvent, "HW Ver", tmpBuf);
 
-      sprintf(tmpBuf, "V%d.%d build %02d%02d%02d", (struDevCfg.dwSoftwareVersion >> 16) & 0xFFFF, struDevCfg.dwSoftwareVersion & 0xFFFF,
-                                          (struDevCfg.dwSoftwareBuildDate >> 16) & 0xFFFF,
-                                          (struDevCfg.dwSoftwareBuildDate >> 8) & 0xFF, struDevCfg.dwSoftwareBuildDate & 0xFF);
+      if ( ((struDevCfg.dwSoftwareVersion>>24) & 0xFF) > 0 )
+      {
+        sprintf(tmpBuf, "V%d.%d.%d build %02d%02d%02d", (struDevCfg.dwSoftwareVersion >> 24) & 0xFF,
+            (struDevCfg.dwSoftwareVersion >> 16) & 0xFF, struDevCfg.dwSoftwareVersion & 0xFFFF,
+            (struDevCfg.dwSoftwareBuildDate >> 16) & 0xFFFF, (struDevCfg.dwSoftwareBuildDate >> 8) & 0xFF,struDevCfg.dwSoftwareBuildDate & 0xFF);
+      }
+      else
+      {
+        sprintf(tmpBuf, "V%d.%d build %02d%02d%02d", (struDevCfg.dwSoftwareVersion >> 16) & 0xFFFF, struDevCfg.dwSoftwareVersion & 0xFFFF,
+            (struDevCfg.dwSoftwareBuildDate >> 16) & 0xFFFF,
+            (struDevCfg.dwSoftwareBuildDate >> 8) & 0xFF, struDevCfg.dwSoftwareBuildDate & 0xFF);
+      }
       cJSON_AddStringToObject(hikEvent, "SW Ver", (char *) tmpBuf);
 
       sprintf(tmpBuf, "V%d.%d build %02d%02d%02d", (struDevCfg.dwDSPSoftwareVersion >> 16) & 0xFFFF, struDevCfg.dwDSPSoftwareVersion & 0xFFFF,
-                                          (struDevCfg.dwDSPSoftwareBuildDate >> 16) & 0xFFFF-2000,
-                                          (struDevCfg.dwDSPSoftwareBuildDate >> 8) & 0xFF, struDevCfg.dwDSPSoftwareBuildDate & 0xFF);
+          ((struDevCfg.dwDSPSoftwareBuildDate >> 16) & 0xFFFF) - 2000,
+          (struDevCfg.dwDSPSoftwareBuildDate >> 8) & 0xFF, struDevCfg.dwDSPSoftwareBuildDate & 0xFF);
       cJSON_AddStringToObject(hikEvent, "DSP Ver", (char *) tmpBuf);
 
       cJSON_AddNumberToObject(hikEvent, "Alarm In", (int) struDevCfg.byAlarmInPortNum);
@@ -369,12 +381,14 @@ void hik_client::get_dvr_config(int devId, long channel)
       cJSON_AddNumberToObject(hikEvent, "Channels", (int) struDevCfg.byChanNum);
       cJSON_AddNumberToObject(hikEvent, "Harddisks", (int) struDevCfg.byDiskNum);
 
-      messageQueue->enqueue(cJSON_Print(hikEvent));
+      auto msg = strdup(cJSON_Print(hikEvent));
+      messageQueue->enqueue(msg);
 
       cJSON_Delete(hikEvent);
     }
   }
 }
+
 void hik_client::set_dvr_config(int devId, long channel)
 {
   //NET_DVR_SetDVRConfig(g_pMainDlg->m_struDeviceInfo.lLoginID, NET_DVR_SET_PTZPOS, 0, &m_ptzPos, sizeof(NET_DVR_PTZPOS));
@@ -629,7 +643,10 @@ void hik_client::ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWOR
     cJSON_AddNumberToObject(hikEvent, "dwDir", (int) struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.dwCrossDirection);
   }
   //cJSON_AddNumberToObject(hikEvent, "dwID", (int) struVcaRuleAlarm.struTargetInfo.dwID);
-  messageQueue->enqueue(cJSON_Print(hikEvent));
+
+  auto msg = strdup(cJSON_Print(hikEvent));
+  messageQueue->enqueue(msg);
+
   cJSON_Delete(hikEvent);
 
   /* Using these values to calculate direction seems impossible.

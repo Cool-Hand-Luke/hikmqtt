@@ -12,6 +12,10 @@
 
 using namespace std;
 
+enum _info_t_ {
+  INFO_DVR_CONFIG = 0
+};
+
 struct _dev_info_ {
   int   devId;
   DWORD  userId;

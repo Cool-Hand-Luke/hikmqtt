@@ -197,17 +197,16 @@ int hikmqtt::lookup_command(const char *arg)
 /*********************************************************************************/
 void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
 {
-  int payload_size = MAX_PAYLOAD + 1;
+  char tmpBuf[MAX_BUFSIZE+1];
   int rc;
-  char buf[payload_size];
 
   // We are only interested in 'hikctrl' messages
-  if(!strcmp(message->topic, mqtt_sub))
+  if( !strcmp(message->topic, mqtt_sub) )
   {
-    memset(buf, 0, payload_size * sizeof(char));
+    memset(tmpBuf, 0, MAX_BUFSIZE * sizeof(char));
 
     /* Copy N-1 bytes to ensure always 0 terminated. */
-    memcpy(buf, message->payload, MAX_PAYLOAD * sizeof(char));
+    memcpy(tmpBuf, message->payload, MAX_BUFSIZE * sizeof(char));
 
     cJSON *root = cJSON_Parse((const char *)message->payload);
     if ( root != NULL )
@@ -227,7 +226,6 @@ void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
           std::invoke(command_list[rc].command, this, devId->valueint, cmdArgs);
         }
       }
-
       cJSON_Delete(root);
     }
   }
@@ -322,7 +320,7 @@ int hikmqtt::read_config(const char *configFile)
 /*********************************************************************************/
 void hikmqtt::run(void)
 {
-  const char *alert;
+  char *alert;
 
   // Connect to our MQTT server
   mqtt = new mqtt_client("hikmqtt", mqtt_user, mqtt_pass, mqtt_server, mqtt_port);
@@ -350,7 +348,10 @@ void hikmqtt::run(void)
   {
     msgQueue.wait_dequeue(alert);
     std::cerr << "alert: " << alert << std::endl;
-    mqtt->pub(mqtt_pub, alert);
+    mqtt->publish(NULL, mqtt_pub, strlen(alert), alert, 0, false);
+
+    // Cleanup
+    free(alert);
   }
 
   // We may get here one day...

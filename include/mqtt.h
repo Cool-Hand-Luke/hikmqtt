@@ -9,9 +9,7 @@
 
 using namespace std;
 
-#define MAX_PAYLOAD 256
-#define DEFAULT_KEEP_ALIVE 60
-
+#define MAX_BUFSIZE        512
 
 class mqtt_client : public mosqpp::mosquittopp
 {
@@ -25,7 +23,7 @@ public:
   ~mqtt_client();
 
   void sub(const char *topic);
-  bool pub(const char *topic, const char *_message);
+  bool pub(const char *topic, const char *_message, bool retain);
   void set_callback(OnMessage Callback, void *);
 
 private:

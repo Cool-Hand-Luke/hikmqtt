@@ -70,9 +70,9 @@ void mqtt_client::sub(const char *topic)
   subscribe(NULL, topic, 0);
 }
 
-bool mqtt_client::pub(const char *topic, const char *_message)
+bool mqtt_client::pub(const char *topic, const char *_message, bool retain)
 {
-  int ret = publish(NULL, topic, strlen(_message), _message,/*qos*/0,/*retain*/false);
+  int ret = publish(NULL, topic, strlen(_message), _message, 0,retain);
 
   return (ret == MOSQ_ERR_SUCCESS);
 }
