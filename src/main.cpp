@@ -5,7 +5,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <csignal>
-#include <thread>
 #include <functional>
 #include <type_traits>
 #include <cjson/cJSON.h>
@@ -146,7 +145,7 @@ void hikmqtt::ptz_move(int devId, cJSON *cmdArgs)
   cJSON *direct  = cJSON_GetObjectItem(cmdArgs,"direction");
   if ( cJSON_IsNumber(channel) && cJSON_IsNumber(direct) )
   {
-    hikc->ptz_controlwithspeed(devId, channel->valueint, PAN_LEFT, 1);
+    hikc->ptz_controlwithspeed(devId, channel->valueint, PAN_LEFT, 2);
   }
 }
 
@@ -237,7 +236,7 @@ void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
 /*********************************************************************************/
 /* Our MQTT callback handler.                                                    */
 /*********************************************************************************/
-void hikmqtt::on_message(const struct mosquitto_message *message, void *userData)
+void hikmqtt::mqtt_callback(const struct mosquitto_message *message, void *userData)
 {
   hikmqtt *ptr = (hikmqtt *)userData;
   ptr->process_mqtt_cmd(message);
@@ -321,14 +320,13 @@ int hikmqtt::read_config(const char *configFile)
 /*********************************************************************************/
 /* Our main program loop (where all the actions happens)                         */
 /*********************************************************************************/
-int hikmqtt::run(void)
+void hikmqtt::run(void)
 {
   const char *alert;
-  int rc = 0;
 
   // Connect to our MQTT server
   mqtt = new mqtt_client("hikmqtt", mqtt_user, mqtt_pass, mqtt_server, mqtt_port);
-  mqtt->on_message(on_message, this);
+  mqtt->set_callback(mqtt_callback, this);
   mqtt->sub(mqtt_sub);
 
   // Initialise our Hikvision class
@@ -341,37 +339,22 @@ int hikmqtt::run(void)
   std::list <_device_>::iterator it;
   for (it = devices.begin(); it != devices.end(); it++)
   {
-    rc = hikc->add_source(it->devId, it->ipAddr, it->username, it->password);
+    hikc->add_source(it->devId, it->ipAddr, it->username, it->password);
   }
 
+  // Let class handle the loop and reconnects
+  mqtt->loop(0, 1);
+
+  // Sit and wait for commands to follow
   while(1)
   {
-    rc = mqtt->loop();
-    if ( rc )
-    {
-      switch (rc)
-      {
-      case 4:
-        std::cerr << "Authentication Error: " << rc << std::endl;
-        break;
-      case 5:
-        std::cerr << "Connection Refused: " << rc << std::endl;
-        mqtt->reconnect();
-        break;
-      default:
-        std::cerr << "Reconnecting on Code: " << rc << std::endl;
-        break;
-      }
-
-      mqtt->reconnect();
-    }
-
     msgQueue.wait_dequeue(alert);
     std::cerr << "alert: " << alert << std::endl;
     mqtt->pub(mqtt_pub, alert);
   }
 
-  return rc;
+  // We may get here one day...
+  mqtt->disconnect();
 }
 
 /*********************************************************************************/

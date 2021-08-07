@@ -29,7 +29,7 @@ mqtt_client::~mqtt_client()
   mosqpp::lib_cleanup();
 }
 
-void mqtt_client::on_message(OnMessage Callback, void *_userData)
+void mqtt_client::set_callback(OnMessage Callback, void *_userData)
 {
   msgCallback = Callback;
   userData = _userData;

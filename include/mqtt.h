@@ -26,7 +26,7 @@ public:
 
   void sub(const char *topic);
   bool pub(const char *topic, const char *_message);
-  void on_message(OnMessage Callback, void *);
+  void set_callback(OnMessage Callback, void *);
 
 private:
   void     *userData;

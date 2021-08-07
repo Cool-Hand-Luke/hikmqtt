@@ -23,7 +23,7 @@ moodycamel::BlockingConcurrentQueue <char *> *messageQueue;
 
 void CALLBACK MessageCallback_V51(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser);
 BOOL CALLBACK MessageCallback_V31(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen, void* pUser);
-void CALLBACK ExceptionCallBack(DWORD dwType, LONG lUserID, LONG lHandle, void *pUser);
+void CALLBACK ExceptionCallBack(DWORD dwType, LONG lUserId, LONG lHandle, void *pUser);
 
 /***************************************************************************/
 /*  Debug helper.                                                          */
@@ -83,9 +83,9 @@ std::ostream& hex_dump(std::ostream& os, const void *buffer, std::size_t bufsize
 /***************************************************************************/
 /*                                                                         */
 /***************************************************************************/
-void CALLBACK ExceptionCallBack(DWORD dwType, LONG lUserID, LONG lHandle, void *pUser)
+void CALLBACK ExceptionCallBack(DWORD dwType, LONG lUserId, LONG lHandle, void *pUser)
 {
-  std::cerr << "ExceptionCallBack lUserID: " << lUserID << ", handle: " << lHandle << ", user data: %p" << pUser << std::endl;
+  std::cerr << "ExceptionCallBack lUserId: " << lUserId << ", handle: " << lHandle << ", user data: %p" << pUser << std::endl;
 
   switch(dwType)
   {
@@ -251,6 +251,12 @@ void hik_client::init_hik()
   // Initialize
   NET_DVR_Init();
 
+  NET_DVR_SDKLOCAL_CFG struSdkLocalCfg = { 0 };
+  struSdkLocalCfg.byEnableAbilityParse = 1;
+  struSdkLocalCfg.byVoiceComMode = 1;
+  struSdkLocalCfg.byLoginWithSimXml = 1;
+  NET_DVR_SetSDKLocalConfig( &struSdkLocalCfg );
+
   //---------------------------------------
   // Set connection time and reconnection time
   NET_DVR_SetConnectTime(2000, 3);
@@ -336,13 +342,36 @@ void hik_client::get_dvr_config(int devId, long channel)
     }
     else
     {
-      std::cout << "--------------------" << std::endl;
-      std::cout << "devId: " << devId << std::endl;
-      std::cout << "DVR Name: " << struDevCfg.sDVRName << std::endl;
-      std::cout << "DVR ID: " << struDevCfg.dwDVRID << std::endl;
-      std::cout << "Serial Number: " << struDevCfg.sSerialNumber << std::endl;
-      std::cout << "Dev Type Name: " << struDevCfg.byDevTypeName << std::endl;
-      std::cout << "VGA Ports: " << struDevCfg.byVGANum << std::endl;
+      cJSON *hikEvent = cJSON_CreateObject();
+      cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
+      cJSON_AddNumberToObject(hikEvent, "DVR ID", (long) struDevCfg.dwDVRID);
+      cJSON_AddStringToObject(hikEvent, "DVR Name:", (char *) struDevCfg.sDVRName );
+      cJSON_AddStringToObject(hikEvent, "DVR Type:", (char *) struDevCfg.byDevTypeName );
+      cJSON_AddStringToObject(hikEvent, "Serial", (char *) struDevCfg.sSerialNumber);
+      //memcpy(cTemp, struDevCfg.dwDVRID, NAME_LEN);
+
+      char tmpBuf[512];
+      sprintf(tmpBuf, "0x%x", struDevCfg.dwHardwareVersion);
+      cJSON_AddStringToObject(hikEvent, "HW Ver", tmpBuf);
+
+      sprintf(tmpBuf, "V%d.%d build %02d%02d%02d", (struDevCfg.dwSoftwareVersion >> 16) & 0xFFFF, struDevCfg.dwSoftwareVersion & 0xFFFF,
+                                          (struDevCfg.dwSoftwareBuildDate >> 16) & 0xFFFF,
+                                          (struDevCfg.dwSoftwareBuildDate >> 8) & 0xFF, struDevCfg.dwSoftwareBuildDate & 0xFF);
+      cJSON_AddStringToObject(hikEvent, "SW Ver", (char *) tmpBuf);
+
+      sprintf(tmpBuf, "V%d.%d build %02d%02d%02d", (struDevCfg.dwDSPSoftwareVersion >> 16) & 0xFFFF, struDevCfg.dwDSPSoftwareVersion & 0xFFFF,
+                                          (struDevCfg.dwDSPSoftwareBuildDate >> 16) & 0xFFFF-2000,
+                                          (struDevCfg.dwDSPSoftwareBuildDate >> 8) & 0xFF, struDevCfg.dwDSPSoftwareBuildDate & 0xFF);
+      cJSON_AddStringToObject(hikEvent, "DSP Ver", (char *) tmpBuf);
+
+      cJSON_AddNumberToObject(hikEvent, "Alarm In", (int) struDevCfg.byAlarmInPortNum);
+      cJSON_AddNumberToObject(hikEvent, "Alarm Out", (int) struDevCfg.byAlarmOutPortNum);
+      cJSON_AddNumberToObject(hikEvent, "Channels", (int) struDevCfg.byChanNum);
+      cJSON_AddNumberToObject(hikEvent, "Harddisks", (int) struDevCfg.byDiskNum);
+
+      messageQueue->enqueue(cJSON_Print(hikEvent));
+
+      cJSON_Delete(hikEvent);
     }
   }
 }
@@ -410,9 +439,8 @@ void hik_client::ptz_controlwithspeed(int devId, long channel, int dir, int spee
     }
     else
     {
-      std::cout << "Set" << std::endl;
-      usleep(1000000);
-      std::cout << "end" << std::endl;
+      //usleep(1000000);
+      usleep(500000);
       // Control with speed end
       NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, dir, 1, speed);
     }
@@ -718,39 +746,24 @@ int hik_client::listen_server(string ipAddr, const unsigned int port)
 /***************************************************************************/
 /* Add a DVR/NVR device to be monitored.                                   */
 /***************************************************************************/
-//#define LOGIN_V30
 int hik_client::add_source(int devId, string ipAddr, string username, string password)
 {
+  NET_DVR_USER_LOGIN_INFO struLoginInfo = { 0 };
   _dev_info_ camera = {0};
+  long lUserId = -1;
 
   //---------------------------------------
-  // Log in to device
-#ifdef LOGIN_V30
-  NET_DVR_DEVICEINFO_V30 StruDeviceInfoV30;
-  int UserId = NET_DVR_Login_V30((char *)ipAddr.c_str(), 8000, (char *)username.c_str(), (char *)password.c_str(), &StruDeviceInfoV30);
-  if (UserId < 0)
-  {
-    int lError = NET_DVR_GetLastError();
-    printf("NET_DVR_Login_V30() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
-  }
-  else
-  {
-    long handle = NET_DVR_SetupAlarmChan_V30(UserId);
-#else
-  //---------------------------------------
   // Prepare to login to device
-  NET_DVR_USER_LOGIN_INFO struLoginInfo = {0};
   struLoginInfo.bUseAsynLogin = false;
-  struLoginInfo.wPort = 8000;
-  struLoginInfo.byLoginMode = 0;   // 0 - SDK Private, 1 = ISAPI  2 = Adaptive (not recommended)
   strncpy(struLoginInfo.sDeviceAddress, ipAddr.c_str(), NET_DVR_DEV_ADDRESS_MAX_LEN);
   strncpy(struLoginInfo.sUserName, username.c_str(), NAME_LEN);
   strncpy(struLoginInfo.sPassword, password.c_str(), NAME_LEN);
+  struLoginInfo.wPort = 8000;
 
   //---------------------------------------
   // Log in to device
-  int UserId = NET_DVR_Login_V40(&struLoginInfo, &camera.struDeviceInfoV40);
-  if (UserId < 0)
+  lUserId = NET_DVR_Login_V40(&struLoginInfo, &camera.struDeviceInfoV40);
+  if (lUserId < 0)
   {
      int lError = NET_DVR_GetLastError();
      printf("NET_DVR_Login_V40() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
@@ -761,11 +774,11 @@ int hik_client::add_source(int devId, string ipAddr, string username, string pas
     // Enable Arming Mode V5.1
     NET_DVR_SETUPALARM_PARAM_V50 struSetupAlarmParam = { 0 };
     struSetupAlarmParam.dwSize = sizeof(struSetupAlarmParam);
-    struSetupAlarmParam.byLevel = 1;                  // Arming priority: 0-high, 1-medium, 2-low
+    struSetupAlarmParam.byLevel = 0;                  // Arming priority: 0-high, 1-medium, 2-low
     struSetupAlarmParam.byAlarmInfoType = 0;          // Intel. traffic alarm type: 0-old (NET_DVR_PLATE_RESULT),1-new (NET_ITS_PLATE_RESULT).
     struSetupAlarmParam.byRetAlarmTypeV40 = 1;        // Motion detection, video loss, video tampering, and alarm input alarm information is sent NET_DVR_ALARMINFO_V40
-    struSetupAlarmParam.byRetDevInfoVersion = 1;      // Alarm types of CVR: 0 = NET_DVR_ALARMINFO_DEV, 1 = NET_DVR_ALARMINFO_DEV_V40
-    struSetupAlarmParam.byRetVQDAlarmType = 1;        // VQD alarm types: 0 = COMM_ALARM_VQD, 1 = COMM_ALARM_VQD_EX
+    struSetupAlarmParam.byRetDevInfoVersion = 0;      // Alarm types of CVR: 0 = NET_DVR_ALARMINFO_DEV, 1 = NET_DVR_ALARMINFO_DEV_V40
+    struSetupAlarmParam.byRetVQDAlarmType = 0;        // VQD alarm types: 0 = COMM_ALARM_VQD, 1 = COMM_ALARM_VQD_EX
     struSetupAlarmParam.byFaceAlarmDetection = 1;     // 0 = COMM_UPLOAD_FACESNAP_RESULT, 1 = NET_DVR_FACE_DETECTION
     struSetupAlarmParam.bySupport = 0x0c;             // bit0: Whether to upload picture: 0 = yes, 1 = no
                                                       // bit1: Whether to enable ANR: 0 = no, 1 = yes
@@ -775,25 +788,25 @@ int hik_client::add_source(int devId, string ipAddr, string username, string pas
     //struSetupAlarmParam.byDeployType = 0;             // Arming type: 0 = arm via client software, 1 = real-time arming.
     //struSetupAlarmParam.bySubScription = 0;           // Bit7: Whether to upload picture after subscribing motion detection: 0 = no, 1 = yes
  
-    long handle = NET_DVR_SetupAlarmChan_V50(UserId, &struSetupAlarmParam, NULL, 0);
-#endif
+    long handle = NET_DVR_SetupAlarmChan_V50(lUserId, &struSetupAlarmParam, NULL, 0);
+
     if (handle < 0)
     {
       int lError = NET_DVR_GetLastError();
       printf("NET_DVR_SetupAlarmChan_Vxx() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
-      NET_DVR_Logout(UserId);
-      UserId = -1;
+      NET_DVR_Logout(lUserId);
+      lUserId = -1;
     }
     else
     {
       camera.devId  = devId;
-      camera.userId = UserId;
+      camera.userId = lUserId;
       camera.handle = handle;
       lDevices.push_back(camera);
-      std::cout << "Device added (devId: " << devId << ", UserId: " << UserId << ", handle: " << handle << ")" << std::endl;
+      std::cout << "Device added (devId: " << devId << ", UserId: " << lUserId << ", handle: " << handle << ")" << std::endl;
     }
   }
 
-  return UserId;
+  return lUserId;
 }
 

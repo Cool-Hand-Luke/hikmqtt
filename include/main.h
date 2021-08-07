@@ -40,7 +40,7 @@ public:
   ~hikmqtt() {};
 
   int  read_config(const char *configFile);
-  int  run(void);
+  void run(void);
 
 private:
   void call_preset_num(int devId, cJSON *cmdArgs);
@@ -60,7 +60,7 @@ private:
   int  lookup_command(const char *arg);
   void process_mqtt_cmd(const struct mosquitto_message *message);
 
-  static void on_message(const struct mosquitto_message *message, void *ptr);
+  static void mqtt_callback(const struct mosquitto_message *message, void *ptr);
 };
 
 #endif //HIKMQTT_H
