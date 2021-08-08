@@ -5,11 +5,12 @@
 #include <cstdlib>
 #include <libconfig.h++>
 #include <list>
-#include "mqtt.h"
+#include <mosquitto.h>
 
 using namespace std;
 using namespace libconfig;
 
+#define  MAX_BUFSIZE   512
 struct _device_
 {
   int     devId;       // Device friendly name
@@ -60,7 +61,7 @@ private:
   int  lookup_command(const char *arg);
   void process_mqtt_cmd(const struct mosquitto_message *message);
 
-  static void mqtt_callback(const struct mosquitto_message *message, void *ptr);
+  static void mqtt_callback(mosquitto *mosq, void *obj, const mosquitto_message *message);
 };
 
 #endif //HIKMQTT_H

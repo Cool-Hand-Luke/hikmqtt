@@ -8,10 +8,10 @@
 #include <functional>
 #include <type_traits>
 #include <cjson/cJSON.h>
+#include <mosquitto.h>
 
 #include "HCNetSDK.h"
 #include "main.h"
-#include "mqtt.h"
 #include "hik.h"
 #include "blockingconcurrentqueue.h"
 
@@ -19,9 +19,10 @@ using namespace std;
 
 #define CONFIG_FILE "/home/matt/.hikmqtt.cfg"
 
-class hikmqtt *hm;
-class mqtt_client *mqtt;
-class hik_client *hikc;
+class  hikmqtt *hm;
+//class  MqttClient *mqtt;
+struct mosquitto *mqtt;
+class  hik_client *hikc;
 
 moodycamel::BlockingConcurrentQueue <char *> msgQueue;
 
@@ -197,17 +198,11 @@ int hikmqtt::lookup_command(const char *arg)
 /*********************************************************************************/
 void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
 {
-  char tmpBuf[MAX_BUFSIZE+1];
   int rc;
 
   // We are only interested in 'hikctrl' messages
   if( !strcmp(message->topic, mqtt_sub) )
   {
-    memset(tmpBuf, 0, MAX_BUFSIZE * sizeof(char));
-
-    /* Copy N-1 bytes to ensure always 0 terminated. */
-    memcpy(tmpBuf, message->payload, MAX_BUFSIZE * sizeof(char));
-
     cJSON *root = cJSON_Parse((const char *)message->payload);
     if ( root != NULL )
     {
@@ -234,7 +229,7 @@ void hikmqtt::process_mqtt_cmd(const struct mosquitto_message *message)
 /*********************************************************************************/
 /* Our MQTT callback handler.                                                    */
 /*********************************************************************************/
-void hikmqtt::mqtt_callback(const struct mosquitto_message *message, void *userData)
+void hikmqtt::mqtt_callback(mosquitto *mosq, void *userData, const mosquitto_message *message)
 {
   hikmqtt *ptr = (hikmqtt *)userData;
   ptr->process_mqtt_cmd(message);
@@ -322,10 +317,14 @@ void hikmqtt::run(void)
 {
   char *alert;
 
-  // Connect to our MQTT server
-  mqtt = new mqtt_client("hikmqtt", mqtt_user, mqtt_pass, mqtt_server, mqtt_port);
-  mqtt->set_callback(mqtt_callback, this);
-  mqtt->sub(mqtt_sub);
+  // Initialise MQTT
+  mosquitto_lib_init();
+  mqtt = mosquitto_new("hikalarm", true, this);
+  mosquitto_username_pw_set(mqtt, mqtt_user.c_str(), mqtt_pass.c_str());
+  mosquitto_message_callback_set(mqtt, mqtt_callback);
+  mosquitto_connect(mqtt,mqtt_server.c_str(), mqtt_port, MOSQ_ERR_KEEPALIVE);
+  mosquitto_subscribe(mqtt, NULL, mqtt_sub, 0);
+  mosquitto_loop_start(mqtt);
 
   // Initialise our Hikvision class
   hikc = new hik_client(&msgQueue);
@@ -340,22 +339,16 @@ void hikmqtt::run(void)
     hikc->add_source(it->devId, it->ipAddr, it->username, it->password);
   }
 
-  // Let class handle the loop and reconnects
-  mqtt->loop(0, 1);
-
   // Sit and wait for commands to follow
   while(1)
   {
     msgQueue.wait_dequeue(alert);
-    std::cerr << "alert: " << alert << std::endl;
-    mqtt->publish(NULL, mqtt_pub, strlen(alert), alert, 0, false);
+    mosquitto_publish(mqtt, NULL, mqtt_pub, strlen(alert), alert, 0, 0 );
 
     // Cleanup
     free(alert);
   }
-
   // We may get here one day...
-  mqtt->disconnect();
 }
 
 /*********************************************************************************/

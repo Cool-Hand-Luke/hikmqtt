@@ -7,7 +7,6 @@
 #include <list>
 #include <mosquittopp.h>
 
-#include "mqtt.h" 
 #include "blockingconcurrentqueue.h"
 
 using namespace std;

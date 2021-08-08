@@ -12,7 +12,6 @@
 
 #include "HCNetSDK.h"
 #include "main.h"
-#include "mqtt.h"
 #include "hik.h"
 
 //#define HIK_DEBUG
