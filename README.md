@@ -85,4 +85,22 @@ Call this command to update the local copy of preset names for the given device 
 ```
 { "command": "dvr_reboot" , "devId": 2, "args": { "reboot": 1 }}
 ```
+## Output
 
+### Smart Events Are Reported as Follows
+```
+BTRGB/hikAlarm {
+        "devId":        3,
+        "EventType":    1,
+        "Channel":      1,
+        "IvmsChannel":  1,
+        "RuleID":       1
+}
+BTRGB/hikAlarm {
+        "devId":        3,
+        "EventType":    1,
+        "Channel":      1,
+        "IvmsChannel":  1,
+        "RuleID":       2
+}
+```
