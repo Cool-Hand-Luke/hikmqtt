@@ -33,6 +33,7 @@ moodycamel::BlockingConcurrentQueue <char *> msgQueue;
 hikmqtt::command hikmqtt::command_list[] = {
   { "call_preset",             &hikmqtt::call_preset_num },
   { "delete_preset",           &hikmqtt::delete_preset_num },
+  { "dvr_reboot",              &hikmqtt::dvr_reboot },
   { "get_dvr_info",            &hikmqtt::get_dvr_info },
   { "get_preset_byname",       &hikmqtt::get_preset_byname },
   { "get_preset_details",      &hikmqtt::get_preset_details },
@@ -211,6 +212,17 @@ void hikmqtt::ptz_move(int devId, cJSON *cmdArgs)
   if ( cJSON_IsNumber(channel) && cJSON_IsNumber(direct) )
   {
     hikc->ptz_controlwithspeed(devId, channel->valueint, PAN_LEFT, 2);
+  }
+}
+/*********************************************************************************/
+/* Reboot the specified device                                                   */
+/*********************************************************************************/
+void hikmqtt::dvr_reboot(int devId, cJSON *cmdArgs)
+{
+  cJSON *reboot = cJSON_GetObjectItem(cmdArgs,"reboot");
+  if ( cJSON_IsNumber(reboot) && reboot->valueint == 1 )
+  {
+    hikc->dvr_reboot(devId);
   }
 }
 

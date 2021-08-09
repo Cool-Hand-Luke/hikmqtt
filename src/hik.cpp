@@ -155,13 +155,14 @@ hik_client::hik_client(moodycamel::BlockingConcurrentQueue <char *> *msgQ)
 /***************************************************************************/
 /* Report errors to MQTT                                                   */
 /***************************************************************************/
-void hik_client::report_error(long devId, int infoT, const char *message)
+void hik_client::simple_report(long devId, int infoT, const char *message, bool status)
 {
   cJSON *hikEvent = cJSON_CreateObject();
 
   cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
   cJSON_AddNumberToObject(hikEvent, "InfoT", infoT);
-  cJSON_AddStringToObject(hikEvent, "Err", message);
+  cJSON_AddNumberToObject(hikEvent, "Status", status);
+  cJSON_AddStringToObject(hikEvent, "msg", message);
 
   auto msg = strdup(cJSON_Print(hikEvent));
   messageQueue->enqueue(msg);
@@ -328,7 +329,7 @@ void hik_client::get_ptz_pos(int devId, long channel)
     if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_PTZPOS, channel, &struPtzPos, sizeof(struPtzPos), &dwReturn))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_GET_PTZPOS, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_GET_PTZPOS, NET_DVR_GetErrorMsg(&lError), false);
     }
     else
     {
@@ -364,7 +365,7 @@ void hik_client::set_ptz_pos(int devId, long channel, int pan, int tilt, int zoo
     if (!NET_DVR_SetDVRConfig(dev->userId, NET_DVR_SET_PTZPOS, channel, &struPtzPos, sizeof(struPtzPos)))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_SET_PTZPOS, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_SET_PTZPOS, NET_DVR_GetErrorMsg(&lError), false);
     }
     else
     {
@@ -400,7 +401,7 @@ void hik_client::get_dvr_config(int devId, long channel)
     if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_DEVICECFG_V40, 0, &struDevCfg, sizeof(NET_DVR_DEVICECFG_V40), &dwReturn))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_GET_DVRCONFIG, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_GET_DVRCONFIG, NET_DVR_GetErrorMsg(&lError), false);
     }
     else
     {
@@ -467,7 +468,7 @@ void hik_client::start_manual_record(int devId, long channel)
     if (!NET_DVR_StartDVRRecord(devId, channel, 0))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError), false);
     }
   }
 }
@@ -480,7 +481,26 @@ void hik_client::stop_manual_record(int devId, long channel)
     if (!NET_DVR_StopDVRRecord(devId, channel))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError), false);
+    }
+  }
+}
+/***************************************************************************/
+/* Remotely reboot the device                                              */
+/***************************************************************************/
+void hik_client::dvr_reboot(int devId)
+{
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    if (!NET_DVR_RebootDVR(devId))
+    {
+      int lError = NET_DVR_GetLastError();
+      simple_report(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError), false);
+    }
+    else
+    {
+      simple_report(devId, INFO_DVR_REBOOT, "", true);
     }
   }
 }
@@ -510,7 +530,7 @@ void hik_client::set_supplementlight(int devId, long channel)
     if (!NET_DVR_GetSTDConfig(dev->userId, NET_DVR_GET_SUPPLEMENTLIGHT, &struCfg))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError), false);
     }
     else
     {
@@ -540,7 +560,7 @@ void hik_client::update_preset_names(int devId, long channel)
     if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_PRESET_NAME, dev->struDeviceInfoV40.struDeviceV30.byStartChan, &dev->struParams, sizeof(NET_DVR_PRESET_NAME) * MAX_PRESET_V40, &dwReturn))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_UPDATE_PRESET_NAMES, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_UPDATE_PRESET_NAMES, NET_DVR_GetErrorMsg(&lError), false);
     }
   }
 }
@@ -621,7 +641,7 @@ void hik_client::ptz_preset(int devId, long channel, int ptzCmd, int presetIndx)
     if (!NET_DVR_PTZPreset_Other(dev->userId, channel, ptzCmd, presetIndx))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_PTZ_PRESET, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_PTZ_PRESET, NET_DVR_GetErrorMsg(&lError), false);
     }
   }
 }
@@ -638,7 +658,7 @@ void hik_client::ptz_controlwithspeed(int devId, long channel, int dir, int spee
     if (!NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, dir, 0, speed))
     {
       int lError = NET_DVR_GetLastError();
-      report_error(devId, INFO_PTZ_CONTROL, NET_DVR_GetErrorMsg(&lError));
+      simple_report(devId, INFO_PTZ_CONTROL, NET_DVR_GetErrorMsg(&lError), false);
     }
     else
     {

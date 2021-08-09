@@ -21,6 +21,7 @@ enum _info_t_ {
   INFO_UPDATE_PRESET_NAMES,
   INFO_PTZ_CONTROL,
   INFO_PTZ_PRESET,
+  INFO_DVR_REBOOT,
 };
 
 struct _dev_info_ {
@@ -65,13 +66,14 @@ public:
   void ptz_controlwithspeed(int devId, long channel, int dir, int speed);
   void start_manual_record(int devId, long channel);
   void stop_manual_record(int devId, long channel);
+  void dvr_reboot(int devId);
 
 private:
   void init_hik();
   void SDK_Version();
   void ProcDevStatusChanged(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);
   void procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);
-  void report_error(long devId, int infoT, const char *message);
+  void simple_report(long devId, int infoT, const char *message, bool status);
 
   _dev_info_ *get_device_byDevId(int);
   _dev_info_ *get_device_byUserId(DWORD);
