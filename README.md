@@ -104,3 +104,11 @@ BTRGB/hikAlarm {
         "RuleID":       2
 }
 ```
+For brevity, no string translation of received events is done.
+* 'devId' is the device ID as described above.
+* 'EventType' corresponds to EVENT_VCA_TRAVERSE_PLANE, EVENT_ENTER_REGION, etc
+* 'channel' corresponds to the channel of the device.
+* 'IvmsChannel' is set on DVR/NVR and needs implementing by me.
+* 'RuleID' corresponds to the rule number associated with the event (ie. line crossing #2)
+
+I did look at basic movement detection, but the information is of little value.
