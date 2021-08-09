@@ -33,10 +33,12 @@ devices = (
 ## Available commands:
 
 ### update_preset_names
+
+Call this command to update the local copy of preset names for the given device and channel. You should do this before searching for a preset by name.
+
 ```mqtt
 { "command": "update_preset_names" , "devId": 0, "args": { "channel": 1 }}
 ```
-Call this command to update the local copy of preset names for the given device and channel. You should do this before searching for a preset by name.
 
 ### get_preset_byname
 ```
