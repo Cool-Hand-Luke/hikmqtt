@@ -56,9 +56,11 @@ Call this command to update the local copy of preset names for the given device 
 ```
 ### delete_preset
 ```
+{ "command": "delete_preset" , "devId": 0, "args": { "preset": 40, "channel": 1 }}
 ```
 ### set_preset
 ```
+{ "command": "set_preset" , "devId": 0, "args": { "preset": 40, "channel": 1 }}
 ```
 ### set_ptz_pos
 ```
