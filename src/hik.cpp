@@ -153,6 +153,23 @@ hik_client::hik_client(moodycamel::BlockingConcurrentQueue <char *> *msgQ)
 }
 
 /***************************************************************************/
+/* Report errors to MQTT                                                   */
+/***************************************************************************/
+void hik_client::report_error(long devId, int infoT, const char *message)
+{
+  cJSON *hikEvent = cJSON_CreateObject();
+
+  cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
+  cJSON_AddNumberToObject(hikEvent, "InfoT", infoT);
+  cJSON_AddStringToObject(hikEvent, "Err", message);
+
+  auto msg = strdup(cJSON_Print(hikEvent));
+  messageQueue->enqueue(msg);
+
+  cJSON_Delete(hikEvent);
+}
+
+/***************************************************************************/
 /*                                                                         */
 /***************************************************************************/
 _dev_info_ *hik_client::get_device_byDevId(int devId)
@@ -302,8 +319,6 @@ void hik_client::SDK_Version()
 /***************************************************************************/
 void hik_client::get_ptz_pos(int devId, long channel)
 {
-  int cur_preset = -1;
-
   _dev_info_ *dev = get_device_byDevId(devId);
   if ( dev )
   {
@@ -313,14 +328,60 @@ void hik_client::get_ptz_pos(int devId, long channel)
     if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_PTZPOS, channel, &struPtzPos, sizeof(struPtzPos), &dwReturn))
     {
       int lError = NET_DVR_GetLastError();
-      printf("get_ptz_pos() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+      report_error(devId, INFO_GET_PTZPOS, NET_DVR_GetErrorMsg(&lError));
     }
     else
     {
+      cJSON *hikEvent = cJSON_CreateObject();
+
+      cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
+      cJSON_AddNumberToObject(hikEvent, "InfoT", INFO_GET_PTZPOS);
+      cJSON_AddNumberToObject(hikEvent, "Pan", (int) struPtzPos.wPanPos);
+      cJSON_AddNumberToObject(hikEvent, "Tilt", (int) struPtzPos.wTiltPos);
+      cJSON_AddNumberToObject(hikEvent, "Zoom", (int) struPtzPos.wZoomPos);
+
+      auto msg = strdup(cJSON_Print(hikEvent));
+      messageQueue->enqueue(msg);
+
+      cJSON_Delete(hikEvent);
     }
   }
+}
+/***************************************************************************/
+/* Set the current camera pan, tilt, zoom position.                        */
+/***************************************************************************/
+void hik_client::set_ptz_pos(int devId, long channel, int pan, int tilt, int zoom)
+{
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    NET_DVR_PTZPOS struPtzPos = {0};
+    struPtzPos.wPanPos = pan;
+    struPtzPos.wTiltPos = tilt;
+    struPtzPos.wZoomPos = zoom;
+    struPtzPos.wAction = 1;
 
-  //return cur_preset;
+    if (!NET_DVR_SetDVRConfig(dev->userId, NET_DVR_SET_PTZPOS, channel, &struPtzPos, sizeof(struPtzPos)))
+    {
+      int lError = NET_DVR_GetLastError();
+      report_error(devId, INFO_SET_PTZPOS, NET_DVR_GetErrorMsg(&lError));
+    }
+    else
+    {
+      cJSON *hikEvent = cJSON_CreateObject();
+
+      cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
+      cJSON_AddNumberToObject(hikEvent, "InfoT", INFO_SET_PTZPOS);
+      cJSON_AddNumberToObject(hikEvent, "Pan", (int) struPtzPos.wPanPos);
+      cJSON_AddNumberToObject(hikEvent, "Tilt", (int) struPtzPos.wTiltPos);
+      cJSON_AddNumberToObject(hikEvent, "Zoom", (int) struPtzPos.wZoomPos);
+
+      auto msg = strdup(cJSON_Print(hikEvent));
+      messageQueue->enqueue(msg);
+
+      cJSON_Delete(hikEvent);
+    }
+  }
 }
 
 /***************************************************************************/
@@ -339,7 +400,7 @@ void hik_client::get_dvr_config(int devId, long channel)
     if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_DEVICECFG_V40, 0, &struDevCfg, sizeof(NET_DVR_DEVICECFG_V40), &dwReturn))
     {
       int lError = NET_DVR_GetLastError();
-      printf("get_preset_names() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+      report_error(devId, INFO_GET_DVRCONFIG, NET_DVR_GetErrorMsg(&lError));
     }
     else
     {
@@ -350,7 +411,7 @@ void hik_client::get_dvr_config(int devId, long channel)
       cJSON_AddNumberToObject(hikEvent, "InfoT", INFO_DVR_CONFIG);
       cJSON_AddNumberToObject(hikEvent, "DVR ID", (long) struDevCfg.dwDVRID);
       cJSON_AddStringToObject(hikEvent, "DVR Name", (char *) struDevCfg.sDVRName );
-      cJSON_AddStringToObject(hikEvent, "DVR Type", (char *) struDevCfg.byDevTypeName );
+      cJSON_AddStringToObject(hikEvent, "Dev Type", (char *) struDevCfg.byDevTypeName );
       cJSON_AddStringToObject(hikEvent, "Serial", (char *) struDevCfg.sSerialNumber);
 
       sprintf(tmpBuf, "0x%x", struDevCfg.dwHardwareVersion);
@@ -393,35 +454,129 @@ void hik_client::set_dvr_config(int devId, long channel)
   //NET_DVR_SetDVRConfig(g_pMainDlg->m_struDeviceInfo.lLoginID, NET_DVR_SET_PTZPOS, 0, &m_ptzPos, sizeof(NET_DVR_PTZPOS));
 }
 
-void hik_client::get_preset_details(int devId, long channel, int presetIndx)
+/***************************************************************************/
+/*                                                                         */
+/***************************************************************************/
+void hik_client::set_supplementlight(int devId, long channel)
 {
+  LONG lChannel = channel;
+  NET_DVR_BUILTIN_SUPPLEMENTLIGHT struBuiltinSupplementLight = {0};
+  //NET_DVR_EXTERNALDEVICE struExternalDevice = {0};
+  char szStatusBuf[1024];
+
+  NET_DVR_STD_CONFIG struCfg = {0};
+  struCfg.lpCondBuffer = &lChannel;
+  struCfg.dwCondSize = sizeof(lChannel);
+  struCfg.lpOutBuffer = &struBuiltinSupplementLight;
+  struCfg.dwOutSize = sizeof(struBuiltinSupplementLight);
+  memset(szStatusBuf, 0, 1024);
+  struCfg.lpStatusBuffer = szStatusBuf;
+  struCfg.dwStatusSize = 1024;
+
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    if (!NET_DVR_GetSTDConfig(dev->userId, NET_DVR_GET_SUPPLEMENTLIGHT, &struCfg))
+    {
+      int lError = NET_DVR_GetLastError();
+      report_error(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError));
+    }
+    else
+    {
+      std::cout << "byMode: " << struBuiltinSupplementLight.byMode << std::endl;
+      std::cout << "byBrightnessLimit: " << struBuiltinSupplementLight.byBrightnessLimit << std::endl;
+
+      struBuiltinSupplementLight.dwSize = sizeof(struBuiltinSupplementLight);
+      struBuiltinSupplementLight.byMode = 0;
+      struBuiltinSupplementLight.byBrightnessLimit  = 20;
+      if(!NET_DVR_SetSTDConfig(dev->userId, NET_DVR_SET_SUPPLEMENTLIGHT, &struCfg))
+      {
+      }
+    }
+  }
 }
 
 /***************************************************************************/
 /*  Get a list of all the presets for the specified device                 */
 /***************************************************************************/
-int hik_client::update_preset_names(int devId, long channel)
+void hik_client::update_preset_names(int devId, long channel)
 {
-  int cur_preset = -1;
-
   _dev_info_ *dev = get_device_byDevId(devId);
   if ( dev )
   {
     DWORD dwReturn = 0;
-    NET_DVR_PTZPOS struPtzPos = {0};
 
     if (!NET_DVR_GetDVRConfig(dev->userId, NET_DVR_GET_PRESET_NAME, dev->struDeviceInfoV40.struDeviceV30.byStartChan, &dev->struParams, sizeof(NET_DVR_PRESET_NAME) * MAX_PRESET_V40, &dwReturn))
     {
       int lError = NET_DVR_GetLastError();
-      printf("get_preset_names() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
-    }
-    else
-    {
-      cur_preset = 0;
+      report_error(devId, INFO_UPDATE_PRESET_NAMES, NET_DVR_GetErrorMsg(&lError));
     }
   }
+}
 
-  return cur_preset;
+/***************************************************************************/
+/*  Return details about a given preset number                             */
+/***************************************************************************/
+void hik_client::get_preset_details(int devId, long channel, int presetIndx)
+{
+  _dev_info_ *dev = get_device_byDevId(devId);
+
+  if ( dev && &dev->struParams != NULL )
+  {
+    int p = presetIndx -1;
+    if ( (presetIndx > 0 && presetIndx <= MAX_PRESET_V40) && dev->struParams[p].wPresetNum > 0 )
+    {
+      cJSON *hikEvent = cJSON_CreateObject();
+
+      cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
+      cJSON_AddNumberToObject(hikEvent, "InfoT", INFO_PRESET_DETAILS);
+      cJSON_AddNumberToObject(hikEvent, "Preset", (int) dev->struParams[p].wPresetNum);
+      cJSON_AddStringToObject(hikEvent, "Name", (char *) dev->struParams[p].byName );
+      cJSON_AddNumberToObject(hikEvent, "Pan", (int) dev->struParams[p].wPanPos);
+      cJSON_AddNumberToObject(hikEvent, "Tilt", (int) dev->struParams[p].wTiltPos);
+      cJSON_AddNumberToObject(hikEvent, "Zoom", (int) dev->struParams[p].wZoomPos);
+
+      auto msg = strdup(cJSON_Print(hikEvent));
+      messageQueue->enqueue(msg);
+
+      cJSON_Delete(hikEvent);
+    }
+  }
+}
+
+/***************************************************************************/
+/*  Return details about a given preset number                             */
+/***************************************************************************/
+void hik_client::get_preset_byname(int devId, long channel, const char *preset)
+{
+  _dev_info_ *dev = get_device_byDevId(devId);
+
+  if ( dev && &dev->struParams != NULL )
+  {
+    int p;
+    for (p = 0; p < MAX_PRESET_V40; p++)
+    {
+      if ( !strcmp(dev->struParams[p].byName, preset) )
+      {
+        cJSON *hikEvent = cJSON_CreateObject();
+
+        cJSON_AddNumberToObject(hikEvent, "devId", (int) devId);
+        cJSON_AddNumberToObject(hikEvent, "InfoT", INFO_PRESET_DETAILS);
+        cJSON_AddNumberToObject(hikEvent, "Preset", (int) dev->struParams[p].wPresetNum);
+        cJSON_AddStringToObject(hikEvent, "Name", (char *) dev->struParams[p].byName );
+        cJSON_AddNumberToObject(hikEvent, "Pan", (int) dev->struParams[p].wPanPos);
+        cJSON_AddNumberToObject(hikEvent, "Tilt", (int) dev->struParams[p].wTiltPos);
+        cJSON_AddNumberToObject(hikEvent, "Zoom", (int) dev->struParams[p].wZoomPos);
+
+        auto msg = strdup(cJSON_Print(hikEvent));
+        messageQueue->enqueue(msg);
+
+        cJSON_Delete(hikEvent);
+
+        break;
+      }
+    }
+  }
 }
 
 /***************************************************************************/
@@ -432,7 +587,11 @@ void hik_client::ptz_preset(int devId, long channel, int ptzCmd, int presetIndx)
   _dev_info_ *dev = get_device_byDevId(devId);
   if ( dev )
   {
-    NET_DVR_PTZPreset_Other(dev->userId, channel, ptzCmd, presetIndx);
+    if (!NET_DVR_PTZPreset_Other(dev->userId, channel, ptzCmd, presetIndx))
+    {
+      int lError = NET_DVR_GetLastError();
+      report_error(devId, INFO_PTZ_PRESET, NET_DVR_GetErrorMsg(&lError));
+    }
   }
 }
 
@@ -448,7 +607,7 @@ void hik_client::ptz_controlwithspeed(int devId, long channel, int dir, int spee
     if (!NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, dir, 0, speed))
     {
       int lError = NET_DVR_GetLastError();
-      printf("get_cur_preset() Error: %d %s\n", lError, NET_DVR_GetErrorMsg(&lError));
+      report_error(devId, INFO_PTZ_CONTROL, NET_DVR_GetErrorMsg(&lError));
     }
     else
     {
@@ -589,10 +748,12 @@ void hik_client::ProcDevStatusChanged(NET_DVR_ALARMER *pAlarmer, char *pAlarmInf
 /***************************************************************************/
 void hik_client::procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
+  /*
   int devId = get_device_byUserId(pAlarmer->lUserID)->devId;
 
   NET_DVR_GIS_UPLOADINFO  struGISInfo = { 0 };
   memcpy(&struGISInfo, pAlarmInfo, sizeof(struGISInfo));
+  */
 
   //hex_dump(std::cout, pAlarmInfo, dwBufLen);
   /*
@@ -637,10 +798,12 @@ void hik_client::ProcRuleAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWOR
   cJSON_AddNumberToObject(hikEvent, "Channel", (int) struVcaRuleAlarm.struDevInfo.byChannel);
   cJSON_AddNumberToObject(hikEvent, "IvmsChannel", (int) struVcaRuleAlarm.struDevInfo.byIvmsChannel);
   cJSON_AddNumberToObject(hikEvent, "RuleID", (int) struVcaRuleAlarm.struRuleInfo.byRuleID);
+  /*
   if ( struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.dwCrossDirection )
   {
     cJSON_AddNumberToObject(hikEvent, "dwDir", (int) struVcaRuleAlarm.struRuleInfo.uEventParam.struTraversePlane.dwCrossDirection);
   }
+  */
   //cJSON_AddNumberToObject(hikEvent, "dwID", (int) struVcaRuleAlarm.struTargetInfo.dwID);
 
   auto msg = strdup(cJSON_Print(hikEvent));

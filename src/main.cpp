@@ -34,10 +34,13 @@ hikmqtt::command hikmqtt::command_list[] = {
   { "call_preset",             &hikmqtt::call_preset_num },
   { "delete_preset",           &hikmqtt::delete_preset_num },
   { "get_dvr_info",            &hikmqtt::get_dvr_info },
+  { "get_preset_byname",       &hikmqtt::get_preset_byname },
   { "get_preset_details",      &hikmqtt::get_preset_details },
   { "get_ptz_pos",             &hikmqtt::get_ptz_pos },
   { "ptz_move",                &hikmqtt::ptz_move },
   { "set_preset",              &hikmqtt::set_preset_num },
+  { "set_ptz_pos",             &hikmqtt::set_ptz_pos },
+  { "set_supplementlight",     &hikmqtt::set_supplementlight },
   { "update_preset_names",     &hikmqtt::update_preset_names },
 };
 #define LCTOP ((sizeof(hikmqtt::command_list) / sizeof(struct hikmqtt::command)) -1)
@@ -59,7 +62,6 @@ void signalHandler( int signum )
 /*********************************************************************************/
 void hikmqtt::update_preset_names(int devId, cJSON *cmdArgs)
 {
-  int cur_preset = -1;
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
   if ( cJSON_IsNumber(channel) )
   {
@@ -71,9 +73,9 @@ void hikmqtt::update_preset_names(int devId, cJSON *cmdArgs)
 /*********************************************************************************/
 void hikmqtt::set_preset_num(int devId, cJSON *cmdArgs)
 {
-  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
-  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  if ( cJSON_IsNumber(channel) && cJSON_IsNumber(preset) )
   {
     hikc->ptz_preset(devId, channel->valueint, SET_PRESET, preset->valueint);
   }
@@ -83,9 +85,9 @@ void hikmqtt::set_preset_num(int devId, cJSON *cmdArgs)
 /*********************************************************************************/
 void hikmqtt::call_preset_num(int devId, cJSON *cmdArgs)
 {
-  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
-  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  if ( cJSON_IsNumber(channel) && cJSON_IsNumber(preset) )
   {
     hikc->ptz_preset(devId, channel->valueint, GOTO_PRESET, preset->valueint);
   }
@@ -95,9 +97,9 @@ void hikmqtt::call_preset_num(int devId, cJSON *cmdArgs)
 /*********************************************************************************/
 void hikmqtt::delete_preset_num(int devId, cJSON *cmdArgs)
 {
-  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
-  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  if ( cJSON_IsNumber(channel) && cJSON_IsNumber(preset) )
   {
     hikc->ptz_preset(devId, channel->valueint, CLE_PRESET, preset->valueint);
   }
@@ -114,27 +116,65 @@ void hikmqtt::get_dvr_info(int devId, cJSON *cmdArgs)
   }
 }
 /*********************************************************************************/
+/*                                                                               */
+/*********************************************************************************/
+void hikmqtt::set_supplementlight(int devId, cJSON *cmdArgs)
+{
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(channel) )
+  {
+    hikc->set_supplementlight(devId, channel->valueint);
+  }
+}
+/*********************************************************************************/
 /* Get the pan, tilt, zoom, etc of the specified device.                         */
 /*********************************************************************************/
 void hikmqtt::get_ptz_pos(int devId, cJSON *cmdArgs)
 {
-  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
-  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  if ( cJSON_IsNumber(channel) && cJSON_IsNumber(preset) )
   {
     hikc->get_ptz_pos(devId, channel->valueint);
   }
 }
 /*********************************************************************************/
-/* Get the pan, tilt, zoom, etc of the specified preset.                         */
+/* Set the pan, tilt, zoom of the specified device.                         */
+/*********************************************************************************/
+void hikmqtt::set_ptz_pos(int devId, cJSON *cmdArgs)
+{
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  cJSON *pan     = cJSON_GetObjectItem(cmdArgs,"pan");
+  cJSON *tilt    = cJSON_GetObjectItem(cmdArgs,"tilt");
+  cJSON *zoom    = cJSON_GetObjectItem(cmdArgs,"zoom");
+
+  if ( cJSON_IsNumber(channel) && cJSON_IsNumber(pan) && cJSON_IsNumber(tilt) && cJSON_IsNumber(zoom) )
+  {
+    hikc->set_ptz_pos(devId, channel->valueint, pan->valueint, tilt->valueint, zoom->valueint);
+  }
+}
+/*********************************************************************************/
+/* Get the name, pan, tilt, zoom, values of the requested preset.                */
 /*********************************************************************************/
 void hikmqtt::get_preset_details(int devId, cJSON *cmdArgs)
 {
-  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
-  if ( cJSON_IsNumber(preset) && cJSON_IsNumber(channel) )
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  if ( cJSON_IsNumber(channel) && cJSON_IsNumber(preset) )
   {
     hikc->get_preset_details(devId, channel->valueint, preset->valueint);
+  }
+}
+/*********************************************************************************/
+/* Get the name, pan, tilt, zoom, values of the requested preset.                */
+/*********************************************************************************/
+void hikmqtt::get_preset_byname(int devId, cJSON *cmdArgs)
+{
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  cJSON *preset  = cJSON_GetObjectItem(cmdArgs,"preset");
+  if ( cJSON_IsNumber(channel) && cJSON_IsString(preset) && (preset->valuestring != NULL) )
+  {
+    hikc->get_preset_byname(devId, channel->valueint, preset->valuestring);
   }
 }
 /*********************************************************************************/

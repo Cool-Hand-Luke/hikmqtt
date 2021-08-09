@@ -50,9 +50,12 @@ private:
   void get_dvr_info(int devId, cJSON *cmdArgs);
   void ptz_move(int devId, cJSON *cmdArgs);
   void get_preset_details(int devId, cJSON *cmdArgs);
+  void get_preset_byname(int devId, cJSON *cmdArgs);
   void get_ptz_pos(int devId, cJSON *cmdArgs);
+  void set_ptz_pos(int devId, cJSON *cmdArgs);
   void set_preset_num(int devId, cJSON *cmdArgs);
   void update_preset_names(int devId, cJSON *cmdArgs);
+  void set_supplementlight(int devId, cJSON *cmdArgs);
 
 
   int  load_config();
