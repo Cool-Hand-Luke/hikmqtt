@@ -57,10 +57,6 @@ Call this command to update the local copy of preset names for the given device 
 ```
 { "command": "get_preset_details" , "devId": 0, "args": { "channel": 1, "preset": 1 }}
 ```
-### delete_preset
-```
-{ "command": "delete_preset" , "devId": 0, "args": { "preset": 40, "channel": 1 }}
-```
 ### set_preset
 ```
 { "command": "set_preset" , "devId": 0, "args": { "preset": 40, "channel": 1 }}
@@ -68,6 +64,10 @@ Call this command to update the local copy of preset names for the given device 
 ### call_preset
 ```
 { "command": "call_preset" , "devId": 0, "args": { "preset": 40, "channel": 1 }}
+```
+### delete_preset
+```
+{ "command": "delete_preset" , "devId": 0, "args": { "preset": 40, "channel": 1 }}
 ```
 ### start_record
 ```
