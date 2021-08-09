@@ -62,17 +62,26 @@ Call this command to update the local copy of preset names for the given device 
 ```
 ### set_ptz_pos
 ```
+{ "command": "set_ptz_pos" , "devId": 0, "args": { "channel": 1, "pan": 5850, "tilt": 201, "zoom": 100 }}
 ```
 ### call_preset
 ```
+{ "command": "call_preset" , "devId": 0, "args": { "preset": 40, "channel": 1 }}
 ```
 ### start_record
 ```
+{ "command": "start_record" , "devId": 0, "args": { "channel": 1 }}
 ```
 ### stop_record
 ```
+{ "command": "stop_record" , "devId": 0, "args": { "channel": 1 }}
+```
+### get_dvr_info
+```
+{ "command": "get_dvr_info" , "devId": 1}
 ```
 ### dvr_reboot
 ```
+{ "command": "dvr_reboot" , "devId": 2, "args": { "reboot": 1 }}
 ```
 
