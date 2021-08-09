@@ -455,6 +455,37 @@ void hik_client::set_dvr_config(int devId, long channel)
 }
 
 /***************************************************************************/
+/* Manually start/stop recoding on devices (notify on err. only)           */
+/***************************************************************************/
+void hik_client::start_manual_record(int devId, long channel)
+{
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    // Not supported by all devices and will default to 0 when unsupported
+    // 0 = manual, 1 = alarm, 2 = postback, 3 = signal, 4 = motion, 5 = tamper.
+    if (!NET_DVR_StartDVRRecord(devId, channel, 0))
+    {
+      int lError = NET_DVR_GetLastError();
+      report_error(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError));
+    }
+  }
+}
+void hik_client::stop_manual_record(int devId, long channel)
+{
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    // 0 = manual, 1 = alarm, 2 = postback, 3 = signal, 4 = motion, 5 = tamper.
+    if (!NET_DVR_StopDVRRecord(devId, channel))
+    {
+      int lError = NET_DVR_GetLastError();
+      report_error(devId, INFO_SET_SUPPLIGHT, NET_DVR_GetErrorMsg(&lError));
+    }
+  }
+}
+
+/***************************************************************************/
 /*                                                                         */
 /***************************************************************************/
 void hik_client::set_supplementlight(int devId, long channel)

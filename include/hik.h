@@ -63,6 +63,8 @@ public:
   void get_preset_details(int devId, long channel, int presetIndx);
   void get_preset_byname(int devId, long channel, const char *presetIndx);
   void ptz_controlwithspeed(int devId, long channel, int dir, int speed);
+  void start_manual_record(int devId, long channel);
+  void stop_manual_record(int devId, long channel);
 
 private:
   void init_hik();

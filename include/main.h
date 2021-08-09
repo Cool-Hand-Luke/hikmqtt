@@ -54,6 +54,8 @@ private:
   void get_ptz_pos(int devId, cJSON *cmdArgs);
   void set_ptz_pos(int devId, cJSON *cmdArgs);
   void set_preset_num(int devId, cJSON *cmdArgs);
+  void start_manual_record(int devId, cJSON *cmdArgs);
+  void stop_manual_record(int devId, cJSON *cmdArgs);
   void update_preset_names(int devId, cJSON *cmdArgs);
   void set_supplementlight(int devId, cJSON *cmdArgs);
 

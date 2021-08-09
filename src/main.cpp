@@ -41,6 +41,8 @@ hikmqtt::command hikmqtt::command_list[] = {
   { "set_preset",              &hikmqtt::set_preset_num },
   { "set_ptz_pos",             &hikmqtt::set_ptz_pos },
   { "set_supplementlight",     &hikmqtt::set_supplementlight },
+  { "start_record",            &hikmqtt::start_manual_record },
+  { "stop_record",             &hikmqtt::stop_manual_record },
   { "update_preset_names",     &hikmqtt::update_preset_names },
 };
 #define LCTOP ((sizeof(hikmqtt::command_list) / sizeof(struct hikmqtt::command)) -1)
@@ -136,6 +138,28 @@ void hikmqtt::get_ptz_pos(int devId, cJSON *cmdArgs)
   if ( cJSON_IsNumber(channel) && cJSON_IsNumber(preset) )
   {
     hikc->get_ptz_pos(devId, channel->valueint);
+  }
+}
+/*********************************************************************************/
+/* Get the pan, tilt, zoom, etc of the specified device.                         */
+/*********************************************************************************/
+void hikmqtt::start_manual_record(int devId, cJSON *cmdArgs)
+{
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(channel) )
+  {
+    hikc->start_manual_record(devId, channel->valueint);
+  }
+}
+/*********************************************************************************/
+/* Get the pan, tilt, zoom, etc of the specified device.                         */
+/*********************************************************************************/
+void hikmqtt::stop_manual_record(int devId, cJSON *cmdArgs)
+{
+  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
+  if ( cJSON_IsNumber(channel) )
+  {
+    hikc->stop_manual_record(devId, channel->valueint);
   }
 }
 /*********************************************************************************/
