@@ -49,7 +49,10 @@ Call this command to update the local copy of preset names for the given device 
 ```
 { "command": "get_ptz_pos" , "devId": 0, "args": { "channel": 1, "preset": 2 }}
 ```
-
+### set_ptz_pos
+```
+{ "command": "set_ptz_pos" , "devId": 0, "args": { "channel": 1, "pan": 5850, "tilt": 201, "zoom": 100 }}
+```
 ### get_preset_details
 ```
 { "command": "get_preset_details" , "devId": 0, "args": { "channel": 1, "preset": 1 }}
@@ -61,10 +64,6 @@ Call this command to update the local copy of preset names for the given device 
 ### set_preset
 ```
 { "command": "set_preset" , "devId": 0, "args": { "preset": 40, "channel": 1 }}
-```
-### set_ptz_pos
-```
-{ "command": "set_ptz_pos" , "devId": 0, "args": { "channel": 1, "pan": 5850, "tilt": 201, "zoom": 100 }}
 ```
 ### call_preset
 ```
