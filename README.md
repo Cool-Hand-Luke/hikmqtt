@@ -45,15 +45,34 @@ Call this command to update the local copy of preset names for the given device 
 { "command": "get_preset_byname" , "devId": 0, "args": { "channel": 1, "preset": "Night mode" }}
 ```
 
-## ToDo
-call_preset <preset num>
-delete_preset <preset num>
-dvr_reboot <device>
-get_preset_byname <string>
-get_preset_details <preset num>
-get_ptz_pos <preset num>
-ptz_move <>
-set_preset <>
-set_ptz_pos <>
-start_record
-stop_record
+### get_ptz_pos
+```
+{ "command": "get_ptz_pos" , "devId": 0, "args": { "channel": 1, "preset": 2 }}
+```
+
+### get_preset_details
+```
+{ "command": "get_preset_details" , "devId": 0, "args": { "channel": 1, "preset": 1 }}
+```
+### delete_preset
+```
+```
+### set_preset
+```
+```
+### set_ptz_pos
+```
+```
+### call_preset
+```
+```
+### start_record
+```
+```
+### stop_record
+```
+```
+### dvr_reboot
+```
+```
+
