@@ -3,13 +3,15 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <libconfig.h++>
 #include <list>
+#include <string>
 #include <mosquitto.h>
+#include <libconfig.h++>
 
 #include "hik.h"
 
 using namespace std;
+using std::string;
 using namespace libconfig;
 
 #define  MAX_BUFSIZE   512
@@ -23,10 +25,11 @@ struct _device_
 
 class hikmqtt
 {
+  bool   m_loop;
   class  hik_client *hikc;
   struct mosquitto *mqtt;
   const char *mqtt_sub, *mqtt_pub;
-  const char *cfgFile;
+  string cfgFile;
   int mqtt_port;
   std::list <_device_> devices;
   string mqtt_server, mqtt_user, mqtt_pass;
@@ -44,7 +47,7 @@ public:
   hikmqtt() {};
   ~hikmqtt();
 
-  int  read_config(const char *configFile);
+  int  read_config(string &configFile);
   void run(void);
 
 private:
@@ -65,6 +68,7 @@ private:
   void set_supplementlight(int devId, cJSON *cmdArgs);
 
 
+  std::string get_configFile(void);
   int  load_config();
   void hikdaemon(void);
   int  str_cmp(const char *arg1, const char *arg2);

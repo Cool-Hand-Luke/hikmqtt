@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <iostream>
+#include <filesystem>
 #include <string.h>
 #include <unistd.h>
 #include <csignal>
@@ -15,6 +16,7 @@
 #include "blockingconcurrentqueue.h"
 
 using namespace std;
+namespace fs = std::filesystem;
 
 moodycamel::BlockingConcurrentQueue <char *> msgQueue;
 
@@ -338,7 +340,7 @@ int hikmqtt::load_config()
 /*********************************************************************************/
 /* Load and process the config file for our dynamic settings...                  */
 /*********************************************************************************/
-int hikmqtt::read_config(const char *configFile)
+int hikmqtt::read_config(string &configFile)
 {
   int rc;
   _device_ device;
@@ -416,7 +418,9 @@ void hikmqtt::run(void)
   }
 
   // Sit and wait for commands to follow
-  while(1)
+  // Issue: If we don't receive a MQTT message, we won't loop
+  m_loop = true;
+  while (m_loop)
   {
     msgQueue.wait_dequeue(alert);
     mosquitto_publish(mqtt, NULL, mqtt_pub, strlen(alert), alert, 0, 0 );
@@ -424,7 +428,6 @@ void hikmqtt::run(void)
     // Cleanup
     free(alert);
   }
-  // We may get here one day...
 }
 
 /*********************************************************************************/
@@ -451,24 +454,69 @@ inline std::string get_env(const char* key)
 }
 
 /*********************************************************************************/
+/* Check file is readable (stolen from Roi Danton on stackoverflow)              */
+/*********************************************************************************/
+bool IsReadable(const fs::path& p)
+{
+  std::error_code ec; // For noexcept overload usage.
+  auto perms = fs::status(p, ec).permissions();
+  if ((perms & fs::perms::owner_read) != fs::perms::none && (perms & fs::perms::group_read) != fs::perms::none && (perms & fs::perms::others_read) != fs::perms::none)
+  {
+    return true;
+  }
+  return false;
+}
+
+string get_configFile(void)
+{
+  fs::path cfgFile;
+
+  // Check for a configuration file in the users home directory
+  string envVar = get_env("HOME");
+  if ( envVar.empty() )
+  {
+    cfgFile = fs::path("/etc/hikmqtt.cfg");
+    if ( !IsReadable(cfgFile) )
+    {
+      cfgFile = "";
+    }
+  }
+  // Check if we have a system wide configuration file
+  else
+  {
+    cfgFile = fs::path("/" + envVar + "/.hikmqtt.cfg");
+    if ( !IsReadable(cfgFile) )
+    {
+      cfgFile = "";
+    }
+  }
+
+  return cfgFile;
+}
+
+/*********************************************************************************/
 /* The Program Start...                                                          */
 /*********************************************************************************/
 int main(void)
 {
-  char configFile[256] = {0};
   int   rc;
-
-  // ToDo: add error checking and /etc/ check
-  // Default to reading the config from our home directory
-  snprintf(configFile, 255, "/%s/.hikmqtt.cfg", get_env("HOME").c_str());
 
   // register signal SIGINT and signal handler
   signal(SIGINT, signalHandler);
 
-  hm = new hikmqtt();
-  if (!(rc = hm->read_config(configFile)))
+  string configFile = get_configFile();
+  if ( configFile.empty() )
   {
-    hm->run();
+    rc = -1;
+  }
+  else
+  {
+    hm = new hikmqtt();
+    if (!(rc = hm->read_config(configFile)))
+    {
+      hm->run();
+    }
+    delete hm;
   }
 
   return rc;

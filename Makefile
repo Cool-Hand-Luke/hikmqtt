@@ -15,7 +15,7 @@ OBJFILE  = $(foreach dir,$(OBJS),$(notdir $(dir)))
 OBJSPATH = $(addprefix obj/,$(OBJFILE))-
 
 LIBPATH = hikvision/lib
-LIBS = -Wl,-rpath=hikvision/lib:./lib -pthread -lhcnetsdk -lmosquitto -lcjson -lconfig++
+LIBS = -Wl,-rpath=hikvision/lib:./lib -pthread -lhcnetsdk -lmosquitto -lcjson -lconfig++ -lstdc++fs
 EXE = hikmqtt
 
 $(warning SUBDIR is $(SUBDIR))
