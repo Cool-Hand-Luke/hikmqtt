@@ -12,19 +12,13 @@
 
 #include "HCNetSDK.h"
 #include "main.h"
-#include "hik.h"
 #include "blockingconcurrentqueue.h"
 
 using namespace std;
 
-#define CONFIG_FILE "/home/matt/.hikmqtt.cfg"
-
-class  hikmqtt *hm;
-//class  MqttClient *mqtt;
-struct mosquitto *mqtt;
-class  hik_client *hikc;
-
 moodycamel::BlockingConcurrentQueue <char *> msgQueue;
+
+hikmqtt *hm;
 
 /*********************************************************************************/
 /* Easy to use list of commands we respond and the associated function           */
@@ -54,10 +48,18 @@ hikmqtt::command hikmqtt::command_list[] = {
 void signalHandler( int signum )
 {
   // Cleanup
-  delete(hikc);
+  delete hm;
 
   // Exit
   exit(signum);
+}
+
+/*********************************************************************************/
+/* Destructor cleanup                                                            */
+/*********************************************************************************/
+hikmqtt::~hikmqtt()
+{
+  delete hikc;
 }
 
 /*********************************************************************************/
@@ -71,6 +73,7 @@ void hikmqtt::update_preset_names(int devId, cJSON *cmdArgs)
     hikc->update_preset_names(devId, channel->valueint);
   }
 }
+
 /*********************************************************************************/
 /* Set the current view as preset (x) for specified device.                      */
 /*********************************************************************************/
@@ -112,11 +115,7 @@ void hikmqtt::delete_preset_num(int devId, cJSON *cmdArgs)
 /*********************************************************************************/
 void hikmqtt::get_dvr_info(int devId, cJSON *cmdArgs)
 {
-  cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
-  if ( cJSON_IsNumber(channel) )
-  {
-    hikc->get_dvr_config(devId, channel->valueint);
-  }
+  hikc->get_dvr_config(devId);
 }
 /*********************************************************************************/
 /*                                                                               */
@@ -126,7 +125,8 @@ void hikmqtt::set_supplementlight(int devId, cJSON *cmdArgs)
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
   if ( cJSON_IsNumber(channel) )
   {
-    hikc->set_supplementlight(devId, channel->valueint);
+    hikc->ptz_control(devId, channel->valueint, HEATER_PWRON, 1);
+    //hikc->set_supplementlight(devId, channel->valueint);
   }
 }
 /*********************************************************************************/
@@ -428,17 +428,45 @@ void hikmqtt::run(void)
 }
 
 /*********************************************************************************/
+/* Get environment variable (stolen from einpoklum on stackoverflow)             */
+/*********************************************************************************/
+inline std::string get_env(const char* key)
+{
+  if (key == nullptr)
+  {
+    throw std::invalid_argument("Null pointer passed as environment variable name");
+  }
+
+  if (*key == '\0')
+  {
+    throw std::invalid_argument("Value requested for the empty-name environment variable");
+  }
+  const char* ev_val = getenv(key);
+  if (ev_val == nullptr)
+  {
+    throw std::runtime_error("Environment variable not defined");
+  }
+
+  return std::string(ev_val);
+}
+
+/*********************************************************************************/
 /* The Program Start...                                                          */
 /*********************************************************************************/
 int main(void)
 {
-  int rc;
+  char configFile[256] = {0};
+  int   rc;
+
+  // ToDo: add error checking and /etc/ check
+  // Default to reading the config from our home directory
+  snprintf(configFile, 255, "/%s/.hikmqtt.cfg", get_env("HOME").c_str());
 
   // register signal SIGINT and signal handler
-  signal(SIGINT, signalHandler); 
+  signal(SIGINT, signalHandler);
 
   hm = new hikmqtt();
-  if (!(rc = hm->read_config(CONFIG_FILE)))
+  if (!(rc = hm->read_config(configFile)))
   {
     hm->run();
   }

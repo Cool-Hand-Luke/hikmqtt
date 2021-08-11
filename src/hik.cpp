@@ -388,7 +388,7 @@ void hik_client::set_ptz_pos(int devId, long channel, int pan, int tilt, int zoo
 /***************************************************************************/
 /* Retrieve information about the requested DVR/NVR                        */
 /***************************************************************************/
-void hik_client::get_dvr_config(int devId, long channel)
+void hik_client::get_dvr_config(int devId)
 {
   char tmpBuf[MAX_BUFSIZE+1];
 
@@ -646,16 +646,22 @@ void hik_client::ptz_preset(int devId, long channel, int ptzCmd, int presetIndx)
   }
 }
 
+// ==========================================================================
+// (NET_DVR_PTZControlWithSpeed_Other & NET_DVR_PTZControl_Other do the same
+// thing, I am just choosing to use them differently as it makes more sense
+// to me, in this instance)
+// ==========================================================================
+
 /***************************************************************************/
 /*  Zoom / Focus / Tilt / Pan the specified device.                        */
 /***************************************************************************/
-void hik_client::ptz_controlwithspeed(int devId, long channel, int dir, int speed)
+void hik_client::ptz_controlwithspeed(int devId, long channel, int cmd, int speed)
 {
   _dev_info_ *dev = get_device_byDevId(devId);
   if ( dev )
   {
     // Control with speed start
-    if (!NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, dir, 0, speed))
+    if (!NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, cmd, 0, speed))
     {
       int lError = NET_DVR_GetLastError();
       simple_report(devId, INFO_PTZ_CONTROL, NET_DVR_GetErrorMsg(&lError), false);
@@ -665,19 +671,39 @@ void hik_client::ptz_controlwithspeed(int devId, long channel, int dir, int spee
       //usleep(1000000);
       usleep(500000);
       // Control with speed end
-      NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, dir, 1, speed);
+      NET_DVR_PTZControlWithSpeed_Other(dev->userId, channel, cmd, 1, speed);
     }
   }
 }
+
+/***************************************************************************/
+/* LIGHT_PWRON / WIPER_PWRON / FAN_PWRON / HEATER_PWRON / AUX_PWRON1       */
+/***************************************************************************/
+void hik_client::ptz_control(int devId, long channel, int cmd, bool stop)
+{
+  _dev_info_ *dev = get_device_byDevId(devId);
+  if ( dev )
+  {
+    if (!NET_DVR_PTZControl_Other(dev->userId, channel, cmd, stop))
+    {
+      int lError = NET_DVR_GetLastError();
+      simple_report(devId, INFO_PTZ_CONTROL, NET_DVR_GetErrorMsg(&lError), false);
+    }
+  }
+}
+
+// ==========================================================================
 
 /***************************************************************************/
 /*  COMM_ALARM_V30 callback.                                               */
 /***************************************************************************/
 void hik_client::ProcAlarmV30(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
+  int devId = get_device_byUserId(pAlarmer->lUserID)->devId;
+
   NET_DVR_ALARMINFO_V30 struAlarmInfoV30;
   memcpy(&struAlarmInfoV30, pAlarmInfo, sizeof(NET_DVR_ALARMINFO_V30));
-  printf("COMM_ALARM_V30: Alarm type is %d\n", struAlarmInfoV30.dwAlarmType);
+  printf("COMM_ALARM_V30: devID = %d, Alarm type is %d\n", devId, struAlarmInfoV30.dwAlarmType);
 
   switch(struAlarmInfoV30.dwAlarmType)
   {
@@ -736,10 +762,12 @@ void hik_client::ProcAlarmV30(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD
 /***************************************************************************/
 void hik_client::ProcAlarmV40(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
+  int devId = get_device_byUserId(pAlarmer->lUserID)->devId;
+
   NET_DVR_ALARMINFO_V40 struAlarmInfoV40;
   memcpy(&struAlarmInfoV40, pAlarmInfo, sizeof(NET_DVR_ALARMINFO_V40));
 
-  printf("COMM_ALARM_V40: Alarm type is %d\n", struAlarmInfoV40.struAlarmFixedHeader.dwAlarmType);
+  printf("COMM_ALARM_V40: devId = %d, Alarm type is %d\n", devId, struAlarmInfoV40.struAlarmFixedHeader.dwAlarmType);
 
   switch (struAlarmInfoV40.struAlarmFixedHeader.dwAlarmType)
   {
@@ -789,8 +817,7 @@ void hik_client::ProcAlarmV40(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD
 void hik_client::ProcDevStatusChanged(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
   int devId = get_device_byUserId(pAlarmer->lUserID)->devId;
-
-  std::cout << "Device: " << devId << std::endl;
+  printf("COMM_DEV_STATUS_CHANGED: devId = %d\n", devId);
   //hex_dump(std::cout, pAlarmInfo, dwBufLen);
 }
 
@@ -799,12 +826,12 @@ void hik_client::ProcDevStatusChanged(NET_DVR_ALARMER *pAlarmer, char *pAlarmInf
 /***************************************************************************/
 void hik_client::procGISInfoAlarm(NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen)
 {
-  /*
   int devId = get_device_byUserId(pAlarmer->lUserID)->devId;
 
   NET_DVR_GIS_UPLOADINFO  struGISInfo = { 0 };
   memcpy(&struGISInfo, pAlarmInfo, sizeof(struGISInfo));
-  */
+
+  printf("COMM_GISINFO_UPLOAD: devId = %d\n", devId);
 
   //hex_dump(std::cout, pAlarmInfo, dwBufLen);
   /*
@@ -921,15 +948,12 @@ void hik_client::proc_callback_message(LONG lCommand, NET_DVR_ALARMER *pAlarmer,
       printf("COMM_ALARM\n");
       break;
     case COMM_ALARM_V30:
-      //printf("COMM_ALARM_V30\n");
       ProcAlarmV30(pAlarmer, pAlarmInfo, dwBufLen);
       break;
     case COMM_ALARM_V40:
-      //printf("COMM_ALARM_V40\n");
       ProcAlarmV40(pAlarmer, pAlarmInfo, dwBufLen);
       break;
     case COMM_ALARM_RULE:
-      //printf("COMM_ALARM_RULE\n");
       ProcRuleAlarm(pAlarmer, pAlarmInfo, dwBufLen);
       break;
     case COMM_ALARM_PDC:
@@ -945,11 +969,9 @@ void hik_client::proc_callback_message(LONG lCommand, NET_DVR_ALARMER *pAlarmer,
       printf("Implement: COMM_ALARM_AUDIOEXCEPTION\n");
       break;
     case COMM_GISINFO_UPLOAD:
-      printf("COMM_GISINFO_UPLOAD\n");
       procGISInfoAlarm(pAlarmer, pAlarmInfo, dwBufLen);
       break;
     case COMM_DEV_STATUS_CHANGED:
-      printf("COMM_DEV_STATUS_CHANGED\n");
       ProcDevStatusChanged(pAlarmer, pAlarmInfo, dwBufLen);
       break;
     default:

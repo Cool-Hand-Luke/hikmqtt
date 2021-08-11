@@ -43,10 +43,8 @@ class hik_client
   NET_DVR_PU_STREAM_CFG m_struPUStream;
 
 public:
-  // Construct
   hik_client(moodycamel::BlockingConcurrentQueue <char *> *msgQ);
   hik_client() {};
-  // Destruct
   ~hik_client();
 
   void proc_callback_message(LONG lCommand, NET_DVR_ALARMER *pAlarmer, char *pAlarmInfo, DWORD dwBufLen);
@@ -54,7 +52,7 @@ public:
   int  add_source(int devId, string ipAddr, string username, string password);
   int  listen_server(string ipAddr, const unsigned int port);
 
-  void get_dvr_config(int devId, long channel);
+  void get_dvr_config(int devId);
   void set_dvr_config(int devId, long channel);
   void set_supplementlight(int devId, long channel);
   void get_ptz_pos(int devId, long channel);
@@ -64,6 +62,7 @@ public:
   void get_preset_details(int devId, long channel, int presetIndx);
   void get_preset_byname(int devId, long channel, const char *presetIndx);
   void ptz_controlwithspeed(int devId, long channel, int dir, int speed);
+  void ptz_control(int devId, long channel, int cmd, bool stop);
   void start_manual_record(int devId, long channel);
   void stop_manual_record(int devId, long channel);
   void dvr_reboot(int devId);

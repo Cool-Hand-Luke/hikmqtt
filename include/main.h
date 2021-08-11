@@ -7,6 +7,8 @@
 #include <list>
 #include <mosquitto.h>
 
+#include "hik.h"
+
 using namespace std;
 using namespace libconfig;
 
@@ -21,11 +23,13 @@ struct _device_
 
 class hikmqtt
 {
-  std::list <_device_> devices;
-  string mqtt_server, mqtt_user, mqtt_pass;
+  class  hik_client *hikc;
+  struct mosquitto *mqtt;
   const char *mqtt_sub, *mqtt_pub;
   const char *cfgFile;
   int mqtt_port;
+  std::list <_device_> devices;
+  string mqtt_server, mqtt_user, mqtt_pass;
   Config cfg;
 
   struct command
@@ -35,10 +39,10 @@ class hikmqtt
   };
   // We only want one of these
   static command command_list[];
-public:
 
+public:
   hikmqtt() {};
-  ~hikmqtt() {};
+  ~hikmqtt();
 
   int  read_config(const char *configFile);
   void run(void);
