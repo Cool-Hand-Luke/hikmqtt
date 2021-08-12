@@ -65,10 +65,10 @@ private:
   void start_manual_record(int devId, cJSON *cmdArgs);
   void stop_manual_record(int devId, cJSON *cmdArgs);
   void update_preset_names(int devId, cJSON *cmdArgs);
-  void set_supplementlight(int devId, cJSON *cmdArgs);
+  void test_func(int devId, cJSON *cmdArgs);
 
 
-  std::string get_configFile(void);
+  string get_configFile(void);
   int  load_config();
   void hikdaemon(void);
   int  str_cmp(const char *arg1, const char *arg2);

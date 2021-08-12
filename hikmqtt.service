@@ -1,0 +1,19 @@
+# /lib/systemd/system/hikmqtt.service
+[Unit]
+Description=HikVision MQTT Service
+After=network.target
+
+[Service]
+Type=simple
+
+WorkingDirectory=/home/matt/hikmqtt
+ExecStart=/home/matt/hikmqtt/hikmqtt
+
+User=matt
+Group=matt
+
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

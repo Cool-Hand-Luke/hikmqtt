@@ -12,16 +12,18 @@
 using namespace std;
 
 enum _info_t_ {
-  INFO_DVR_CONFIG = 0,
-  INFO_PRESET_DETAILS,
-  INFO_GET_PTZPOS,
-  INFO_SET_PTZPOS,
-  INFO_GET_DVRCONFIG,
-  INFO_SET_SUPPLIGHT,
-  INFO_UPDATE_PRESET_NAMES,
-  INFO_PTZ_CONTROL,
-  INFO_PTZ_PRESET,
-  INFO_DVR_REBOOT,
+  HM_DVR_CONFIG = 0,
+  HM_PRESET_DETAILS,
+  HM_GET_PTZPOS,
+  HM_SET_PTZPOS,
+  HM_GET_DVRCONFIG,
+  HM_SET_SUPPLIGHT,
+  HM_UPDATE_PRESET_NAMES,
+  HM_PTZ_CONTROL,
+  HM_PTZ_PRESET,
+  HM_DVR_REBOOT,
+  HM_START_RECORD,
+  HM_STOP_RECORD
 };
 
 struct _dev_info_ {
@@ -54,7 +56,7 @@ public:
 
   void get_dvr_config(int devId);
   void set_dvr_config(int devId, long channel);
-  void set_supplementlight(int devId, long channel);
+  void test_func(int devId, long channel);
   void get_ptz_pos(int devId, long channel);
   void set_ptz_pos(int devId, long channel, int pan, int tilt, int zoom);
   void ptz_preset(int devId, long channel, int ptzCmd, int presetIndx);

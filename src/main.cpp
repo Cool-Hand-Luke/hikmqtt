@@ -37,9 +37,9 @@ hikmqtt::command hikmqtt::command_list[] = {
   { "ptz_move",                &hikmqtt::ptz_move },
   { "set_preset",              &hikmqtt::set_preset_num },
   { "set_ptz_pos",             &hikmqtt::set_ptz_pos },
-  { "set_supplementlight",     &hikmqtt::set_supplementlight },
   { "start_record",            &hikmqtt::start_manual_record },
   { "stop_record",             &hikmqtt::stop_manual_record },
+  { "test_func",               &hikmqtt::test_func },
   { "update_preset_names",     &hikmqtt::update_preset_names },
 };
 #define LCTOP ((sizeof(hikmqtt::command_list) / sizeof(struct hikmqtt::command)) -1)
@@ -122,13 +122,13 @@ void hikmqtt::get_dvr_info(int devId, cJSON *cmdArgs)
 /*********************************************************************************/
 /*                                                                               */
 /*********************************************************************************/
-void hikmqtt::set_supplementlight(int devId, cJSON *cmdArgs)
+void hikmqtt::test_func(int devId, cJSON *cmdArgs)
 {
   cJSON *channel = cJSON_GetObjectItem(cmdArgs,"channel");
   if ( cJSON_IsNumber(channel) )
   {
-    hikc->ptz_control(devId, channel->valueint, HEATER_PWRON, 1);
-    //hikc->set_supplementlight(devId, channel->valueint);
+    //hikc->ptz_control(devId, channel->valueint, HEATER_PWRON, 1);
+    hikc->test_func(devId, channel->valueint);
   }
 }
 /*********************************************************************************/
@@ -467,6 +467,9 @@ bool IsReadable(const fs::path& p)
   return false;
 }
 
+/*********************************************************************************/
+/* Try and find a valid config file (sure this could be made cleaner)            */
+/*********************************************************************************/
 string get_configFile(void)
 {
   fs::path cfgFile;
@@ -501,9 +504,11 @@ int main(void)
 {
   int   rc;
 
-  // register signal SIGINT and signal handler
+  // Try and clean up after ourselves
   signal(SIGINT, signalHandler);
+  signal(SIGTERM, signalHandler);
 
+  // Look for a config file
   string configFile = get_configFile();
   if ( configFile.empty() )
   {
@@ -514,6 +519,7 @@ int main(void)
     hm = new hikmqtt();
     if (!(rc = hm->read_config(configFile)))
     {
+      // Run the main program
       hm->run();
     }
     delete hm;
